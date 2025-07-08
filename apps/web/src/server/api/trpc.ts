@@ -111,7 +111,7 @@ export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
 });
 
 export const teamProcedure = protectedProcedure.use(async ({ ctx, next }) => {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
 
   const currentTeamId = cookieStore.get("unsendTeamId")?.value
     ? parseInt(cookieStore.get("unsendTeamId")!.value, 10)
