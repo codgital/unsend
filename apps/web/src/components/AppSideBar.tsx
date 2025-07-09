@@ -132,7 +132,7 @@ export function AppSidebar() {
         <SidebarGroupLabel>
           <div className="flex items-center gap-2">
             <span className="text-lg font-semibold text-foreground">
-              Unsend
+              Mail Core
             </span>
             <Badge variant="outline">Beta</Badge>
           </div>
