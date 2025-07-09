@@ -14,15 +14,13 @@ on:
 jobs:
   build_and_publish_platform_containers:
     name: Build and publish platform containers
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     permissions:
       packages: write
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - warp-ubuntu-latest-x64-2x
-          - warp-ubuntu-latest-arm64-2x
+        platform: [amd64, arm64]
         app:
           - name: unsend
             dockerfile: ./docker/Dockerfile
@@ -54,7 +52,7 @@ jobs:
 
       - name: Build the docker image
         env:
-          BUILD_PLATFORM: ${{ matrix.os == 'warp-ubuntu-latest-arm64-2x' && 'arm64' || 'amd64' }}
+          BUILD_PLATFORM: ${{ matrix.platform }}
           APP: ${{ matrix.app.name }}
           DOCKER_FILE: ${{ matrix.app.dockerfile }}
           CONTEXT: ${{ matrix.app.context }}
@@ -77,14 +75,11 @@ jobs:
             "$CONTEXT"
 
       - name: Push the docker image to DockerHub
-        run: docker push --all-tags "${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.app.name }}-${{ matrix.os == 'warp-ubuntu-latest-arm64-2x' && 'arm64' || 'amd64' }}"
-        env:
-          APP: ${{ matrix.app.name }}
-
+        run: docker push --all-tags "${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.app.name }}-${{ matrix.platform }}"
+        
       - name: Push the docker image to GitHub Container Registry
-        run: docker push --all-tags "ghcr.io/${{ github.repository_owner }}/${{ matrix.app.name }}-${{ matrix.os == 'warp-ubuntu-latest-arm64-2x' && 'arm64' || 'amd64' }}"
-        env:
-          APP: ${{ matrix.app.name }}
+        run: docker push --all-tags "ghcr.io/${{ github.repository_owner }}/${{ matrix.app.name }}-${{ matrix.platform }}"
+
 
   create_and_publish_manifest:
     name: Create and publish manifest
