@@ -417,28 +417,16 @@ export class SesHookParser {
     private static worker = new Worker(
         SES_WEBHOOK_QUEUE,
         async (job) => {
-            return await withLogger(
-                getChildLogger({
-                    queueId: job.id ?? randomUUID(),
-                }),
-                async () => {
-                    await this.execute(job.data);
-                },
-            );
+            await this.execute(job.data);
         },
         {
             connection: getRedis(),
-            concurrency: 50,
+            concurrency: 200,
         },
     );
 
     private static async execute(event: SesEvent) {
-        try {
-            await parseSesHook(event);
-        } catch (error) {
-            logger.error({ error }, "Error parsing ses hook");
-            throw error;
-        }
+        await parseSesHook(event);
     }
 
     static async queue(data: { event: SesEvent; messageId: string }) {
