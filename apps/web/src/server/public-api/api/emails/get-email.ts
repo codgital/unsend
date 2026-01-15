@@ -58,13 +58,13 @@ const route = createRoute({
 function send(app: PublicAPIApp) {
   app.openapi(route, async (c) => {
     const team = c.var.team;
-
     const emailId = c.req.param("emailId");
 
     const email = await db.email.findUnique({
       where: {
         id: emailId,
         teamId: team.id,
+        domainId: team.apiKey.domainId ?? undefined,
       },
       select: {
         id: true,

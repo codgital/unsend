@@ -7,12 +7,12 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@unsend/ui/src/table";
+} from "@usesend/ui/src/table";
 import { formatDistanceToNow } from "date-fns";
 import { api } from "~/trpc/react";
-import Spinner from "@unsend/ui/src/spinner";
+import Spinner from "@usesend/ui/src/spinner";
 import EditSesConfiguration from "./edit-ses-configuration";
-import { TextWithCopyButton } from "@unsend/ui/src/text-with-copy";
+import { TextWithCopyButton } from "@usesend/ui/src/text-with-copy";
 
 export default function SesConfigurations() {
   const sesSettingsQuery = api.admin.getSesSettings.useQuery();
@@ -24,6 +24,7 @@ export default function SesConfigurations() {
           <TableHeader className="">
             <TableRow className=" bg-muted/30">
               <TableHead className="rounded-tl-xl">Region</TableHead>
+              <TableHead>Prefix Key</TableHead>
               <TableHead>Callback URL</TableHead>
               <TableHead>Callback status</TableHead>
               <TableHead>Created at</TableHead>
@@ -52,6 +53,7 @@ export default function SesConfigurations() {
               sesSettingsQuery.data?.map((sesSetting) => (
                 <TableRow key={sesSetting.id}>
                   <TableCell>{sesSetting.region}</TableCell>
+                  <TableCell>{sesSetting.idPrefix}</TableCell>
                   <TableCell>
                     <div className="w-[200px] overflow-hidden text-ellipsis">
                       <TextWithCopyButton

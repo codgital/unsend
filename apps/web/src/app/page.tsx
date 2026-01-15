@@ -8,7 +8,7 @@ export default async function Home() {
     redirect("/login");
   }
 
-  if (!session.user.isBetaUser) {
+  if (session.user.isWaitlisted) {
     redirect("/wait-list");
   } else {
     redirect("/dashboard");

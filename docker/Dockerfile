@@ -1,4 +1,4 @@
-FROM node:20.11.1-alpine AS base
+FROM node:20.19-alpine3.20 AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 ENV SKIP_ENV_VALIDATION="true"
@@ -30,13 +30,20 @@ RUN apk add --no-cache libc6-compat
 RUN apk update
 WORKDIR /app
 
-
 # First install the dependencies (as they change less often)
 COPY .gitignore .gitignore
 COPY --from=builder /app/out/json/ .
 COPY --from=builder /app/out/pnpm-lock.yaml ./pnpm-lock.yaml
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 
+# Build arguments for version information
+# Placed after install to preserve dependency cache when version changes
+ARG APP_VERSION=unknown
+ARG GIT_SHA=unknown
+
+# Set version as environment variables for Next.js build
+ENV NEXT_PUBLIC_APP_VERSION=$APP_VERSION
+ENV NEXT_PUBLIC_GIT_SHA=$GIT_SHA
 
 # Build the project
 COPY --from=builder /app/out/full/ .
@@ -45,8 +52,6 @@ RUN pnpm turbo run build --filter=web...
 
 FROM base AS runner
 WORKDIR /app
-
-
 
 COPY --from=installer /app/apps/web/next.config.js .
 COPY --from=installer /app/apps/web/package.json .

@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Button } from "@unsend/ui/src/button";
-import { Card } from "@unsend/ui/src/card";
-import { Spinner } from "@unsend/ui/src/spinner";
+import { Button } from "@usesend/ui/src/button";
+import { Card } from "@usesend/ui/src/card";
+import { Spinner } from "@usesend/ui/src/spinner";
 import { format } from "date-fns";
 import { useTeam } from "~/providers/team-context";
 import { api } from "~/trpc/react";
@@ -19,7 +19,7 @@ export default function SettingsPage() {
   const { data: subscription } = api.billing.getSubscriptionDetails.useQuery();
   const [isEditingEmail, setIsEditingEmail] = useState(false);
   const [billingEmail, setBillingEmail] = useState(
-    currentTeam?.billingEmail || ""
+    currentTeam?.billingEmail || "",
   );
 
   const apiUtils = api.useUtils();
@@ -46,7 +46,10 @@ export default function SettingsPage() {
     }
   };
 
-  const paymentMethod = JSON.parse(subscription?.paymentMethod || "{}");
+  const paymentMethod =
+    subscription?.paymentMethod && subscription.paymentMethod !== "null"
+      ? JSON.parse(subscription.paymentMethod)
+      : {};
 
   if (!currentIsAdmin) {
     return null;
@@ -89,14 +92,15 @@ export default function SettingsPage() {
             {subscription ? (
               <div className="mt-2">
                 <div className="text-lg font-mono uppercase flex items-center gap-2">
-                  {subscription.paymentMethod ? (
+                  {subscription.paymentMethod &&
+                  subscription.paymentMethod !== "null" ? (
                     <>
                       <span>💳</span>
                       <span className="capitalize">
-                        {paymentMethod.card?.brand || ""} ••••{" "}
-                        {paymentMethod.card?.last4 || ""}
+                        {paymentMethod?.card?.brand || ""} ••••{" "}
+                        {paymentMethod?.card?.last4 || ""}
                       </span>
-                      {paymentMethod.card && (
+                      {paymentMethod?.card && (
                         <span className="text-sm text-muted-foreground lowercase">
                           (Expires: {paymentMethod.card.exp_month}/
                           {paymentMethod.card.exp_year})
@@ -112,7 +116,7 @@ export default function SettingsPage() {
                   {subscription.currentPeriodEnd
                     ? format(
                         new Date(subscription.currentPeriodEnd),
-                        "MMM dd, yyyy"
+                        "MMM dd, yyyy",
                       )
                     : "N/A"}
                 </div>
@@ -164,7 +168,7 @@ export default function SettingsPage() {
                   <div className="font-mono">
                     {currentTeam?.billingEmail || "No billing email set"}
                   </div>
-                  <Button onClick={handleEditEmail} variant="ghost" size="sm">
+                  <Button onClick={handleEditEmail} variant="default" size="sm">
                     Edit
                   </Button>
                 </div>

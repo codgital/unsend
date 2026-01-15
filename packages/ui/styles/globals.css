@@ -9,12 +9,12 @@
     --foreground: 234 16% 35%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 234 16% 35%;
 
     --popover: 220 2% 96%;
     --popover-foreground: 234 16% 35%;
 
-    --primary: 200 65% 14%;
+    --primary: 167 34% 20%;
     --primary-foreground: 210 40% 98%;
 
     --secondary: 210 40% 96.1%;
@@ -55,6 +55,15 @@
     --sidebar-accent-foreground: 240 5.9% 10%;
     --sidebar-border: 240 11% 88%;
     --sidebar-ring: 217.2 91.2% 59.8%;
+
+    /* Status Colors */
+    --green: 109 58% 40%;
+    --red: 347 87% 44%;
+    --blue: 197 97% 46%;
+    --purple: 266 85% 58%;
+    --yellow: 35 77% 49%;
+    --gray: 220 9% 46%;
+    --primary-light: 183 74% 35%;
   }
 
   .dark {
@@ -62,12 +71,12 @@
     --foreground: 226 64% 88%;
 
     --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
+    --card-foreground: 226 64% 88%;
 
     --popover: 240 21% 15%;
     --popover-foreground: 226 64% 88%;
 
-    --primary: 220 23% 95%;
+    --primary: 167 64% 94%;
     --primary-foreground: 240 23% 9%;
 
     --secondary: 217.2 32.6% 17.5%;
@@ -106,6 +115,15 @@
     --sidebar-accent-foreground: 240 4.8% 95.9%;
     --sidebar-border: 240 21% 15%;
     --sidebar-ring: 217.2 91.2% 59.8%;
+
+    /* Status Colors - Dark Mode */
+    --green: 115 54% 76%;
+    --red: 343 81% 75%;
+    --blue: 212 96% 78%;
+    --purple: 267 84% 81%;
+    --yellow: 41 86% 83%;
+    --gray: 218 11% 65%;
+    --primary-light: 170 57% 73%;
   }
 }
 
@@ -119,6 +137,29 @@
   html {
     @apply h-full;
   }
+}
+
+/* Prevent italic styling in Shiki code blocks */
+.shiki,
+.shiki span {
+  font-style: normal !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  .shiki,
+  .shiki span {
+    color: var(--shiki-dark) !important;
+    background-color: var(--shiki-dark-bg) !important;
+    /* Optional, if you also want font styles */
+    font-weight: var(--shiki-dark-font-weight) !important;
+    text-decoration: var(--shiki-dark-text-decoration) !important;
+  }
+}
+
+@layer utilities {
+  /* Hide scrollbars but preserve scroll behavior */
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 }
 
 /* .app,

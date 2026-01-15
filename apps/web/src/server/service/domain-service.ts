@@ -6,6 +6,80 @@ import { db } from "~/server/db";
 import { SesSettingsService } from "./ses-settings-service";
 import { WebhookService } from "./webhook-service";
 import { UnsendApiError } from "../public-api/api-error";
+import { logger } from "../logger/log";
+import { ApiKey, DomainStatus, type Domain } from "@prisma/client";
+import { LimitService } from "./limit-service";
+import type { DomainDnsRecord } from "~/types/domain";
+
+const DOMAIN_STATUS_VALUES = new Set(Object.values(DomainStatus));
+
+function parseDomainStatus(status?: string | null): DomainStatus {
+  if (!status) {
+    return DomainStatus.NOT_STARTED;
+  }
+
+  const normalized = status.toUpperCase();
+
+  if (DOMAIN_STATUS_VALUES.has(normalized as DomainStatus)) {
+    return normalized as DomainStatus;
+  }
+
+  return DomainStatus.NOT_STARTED;
+}
+
+function buildDnsRecords(domain: Domain): DomainDnsRecord[] {
+  const subdomainSuffix = domain.subdomain ? `.${domain.subdomain}` : "";
+  const mailDomain = `mail${subdomainSuffix}`;
+  const dkimSelector = domain.dkimSelector ?? "usesend";
+
+  const spfStatus = parseDomainStatus(domain.spfDetails);
+  const dkimStatus = parseDomainStatus(domain.dkimStatus);
+  const dmarcStatus = domain.dmarcAdded
+    ? DomainStatus.SUCCESS
+    : DomainStatus.NOT_STARTED;
+
+  return [
+    {
+      type: "MX",
+      name: mailDomain,
+      value: `feedback-smtp.${domain.region}.amazonses.com`,
+      ttl: "Auto",
+      priority: "10",
+      status: spfStatus,
+    },
+    {
+      type: "TXT",
+      name: `${dkimSelector}._domainkey${subdomainSuffix}`,
+      value: `p=${domain.publicKey}`,
+      ttl: "Auto",
+      status: dkimStatus,
+    },
+    {
+      type: "TXT",
+      name: mailDomain,
+      value: "v=spf1 include:amazonses.com ~all",
+      ttl: "Auto",
+      status: spfStatus,
+    },
+    {
+      type: "TXT",
+      name: "_dmarc",
+      value: "v=DMARC1; p=none;",
+      ttl: "Auto",
+      status: dmarcStatus,
+      recommended: true,
+    },
+  ];
+}
+
+function withDnsRecords<T extends Domain>(
+  domain: T
+): T & { dnsRecords: DomainDnsRecord[] } {
+  return {
+    ...domain,
+    dnsRecords: buildDnsRecords(domain),
+  };
+}
 
 const dnsResolveTxt = util.promisify(dns.resolveTxt);
 
@@ -33,14 +107,14 @@ export async function validateDomainFromEmail(email: string, teamId: number) {
     });
   }
 
-  const domain = await db.domain.findUnique({
+  const domain = await db.domain.findFirst({
     where: { name: fromDomain, teamId },
   });
 
   if (!domain) {
     throw new UnsendApiError({
       code: "BAD_REQUEST",
-      message: `Domain: ${fromDomain} of from email is wrong. Use the domain verified by unsend`,
+      message: `Domain: ${fromDomain} of from email is wrong. Use the domain verified by useSend`,
     });
   }
 
@@ -54,14 +128,39 @@ export async function validateDomainFromEmail(email: string, teamId: number) {
   return domain;
 }
 
+export async function validateApiKeyDomainAccess(
+  email: string,
+  teamId: number,
+  apiKey: ApiKey & { domain?: { name: string } | null }
+) {
+  // First validate the domain exists and is verified
+  const domain = await validateDomainFromEmail(email, teamId);
+
+  // If API key has no domain restriction (domainId is null), allow all domains
+  if (!apiKey.domainId) {
+    return domain;
+  }
+
+  // If API key is restricted to a specific domain, check if it matches
+  if (apiKey.domainId !== domain.id) {
+    throw new UnsendApiError({
+      code: "FORBIDDEN",
+      message: `API key does not have access to domain: ${domain.name}`,
+    });
+  }
+
+  return domain;
+}
+
 export async function createDomain(
   teamId: number,
   name: string,
-  region: string
+  region: string,
+  sesTenantId?: string
 ) {
   const domainStr = tldts.getDomain(name);
 
-  console.log("Creating domain", { domainStr, name, region });
+  logger.info({ domainStr, name, region }, "Creating domain");
 
   if (!domainStr) {
     throw new Error("Invalid domain");
@@ -73,8 +172,24 @@ export async function createDomain(
     throw new Error("Ses setting not found");
   }
 
+  const { isLimitReached, reason } =
+    await LimitService.checkDomainLimit(teamId);
+
+  if (isLimitReached) {
+    throw new UnsendApiError({
+      code: "FORBIDDEN",
+      message: reason ?? "Domain limit reached",
+    });
+  }
+
   const subdomain = tldts.getSubdomain(name);
-  const publicKey = await ses.addDomain(name, region);
+  const dkimSelector = "usesend";
+  const publicKey = await ses.addDomain(
+    name,
+    region,
+    sesTenantId,
+    dkimSelector
+  );
 
   const domain = await db.domain.create({
     data: {
@@ -83,21 +198,29 @@ export async function createDomain(
       teamId,
       subdomain,
       region,
+      sesTenantId,
+      dkimSelector,
+      dkimStatus: DomainStatus.NOT_STARTED,
+      spfDetails: DomainStatus.NOT_STARTED,
     },
   });
 
-  return domain;
+  return withDnsRecords(domain);
 }
 
-export async function getDomain(id: number) {
+export async function getDomain(id: number, teamId: number) {
   let domain = await db.domain.findUnique({
     where: {
       id,
+      teamId,
     },
   });
 
   if (!domain) {
-    throw new Error("Domain not found");
+    throw new UnsendApiError({
+      code: "NOT_FOUND",
+      message: "Domain not found",
+    });
   }
 
   if (domain.isVerifying) {
@@ -112,7 +235,7 @@ export async function getDomain(id: number) {
     const verificationStatus = domainIdentity.VerificationStatus;
     const lastCheckedTime =
       domainIdentity.VerificationInfo?.LastCheckedTimestamp;
-    const _dmarcRecord = await getDmarcRecord(domain.name);
+    const _dmarcRecord = await getDmarcRecord(tldts.getDomain(domain.name)!);
     const dmarcRecord = _dmarcRecord?.[0]?.[0];
 
     const isVerifying =
@@ -142,17 +265,30 @@ export async function getDomain(id: number) {
       },
     });
 
-    return {
+    const normalizedDomain = {
       ...domain,
       dkimStatus: dkimStatus?.toString() ?? null,
       spfDetails: spfDetails?.toString() ?? null,
-      verificationError: verificationError?.toString() ?? null,
-      lastCheckedTime,
       dmarcAdded: dmarcRecord ? true : false,
+    } satisfies Domain;
+
+    const domainWithDns = withDnsRecords(normalizedDomain);
+    const normalizedLastCheckedTime =
+      lastCheckedTime instanceof Date
+        ? lastCheckedTime.toISOString()
+        : (lastCheckedTime ?? null);
+
+    return {
+      ...domainWithDns,
+      dkimStatus: normalizedDomain.dkimStatus,
+      spfDetails: normalizedDomain.spfDetails,
+      verificationError: verificationError?.toString() ?? null,
+      lastCheckedTime: normalizedLastCheckedTime,
+      dmarcAdded: normalizedDomain.dmarcAdded,
     };
   }
 
-  return domain;
+  return withDnsRecords(domain);
 }
 
 export async function updateDomain(
@@ -174,26 +310,36 @@ export async function deleteDomain(id: number) {
     throw new Error("Domain not found");
   }
 
-  const deleted = await ses.deleteDomain(domain.name, domain.region);
+  const deleted = await ses.deleteDomain(
+    domain.name,
+    domain.region,
+    domain.sesTenantId ?? undefined
+  );
 
   if (!deleted) {
     throw new Error("Error in deleting domain");
   }
 
-  return db.domain.delete({
-    where: { id },
-  });
+  const deletedRecord = await db.domain.delete({ where: { id } });
+
+  return deletedRecord;
 }
 
-export async function getDomains(teamId: number) {
-  return db.domain.findMany({
+export async function getDomains(
+  teamId: number,
+  options?: { domainId?: number }
+) {
+  const domains = await db.domain.findMany({
     where: {
       teamId,
+      ...(options?.domainId ? { id: options.domainId } : {}),
     },
     orderBy: {
       createdAt: "desc",
     },
   });
+
+  return domains.map((d) => withDnsRecords(d));
 }
 
 async function getDmarcRecord(domain: string) {
@@ -201,7 +347,7 @@ async function getDmarcRecord(domain: string) {
     const dmarcRecord = await dnsResolveTxt(`_dmarc.${domain}`);
     return dmarcRecord;
   } catch (error) {
-    console.error("Error fetching DMARC record:", error);
+    logger.error({ err: error, domain }, "Error fetching DMARC record");
     return null; // or handle error as appropriate
   }
 }

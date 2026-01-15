@@ -1,13 +1,13 @@
 "use client";
 
-import { Button } from "@unsend/ui/src/button";
+import { Button } from "@usesend/ui/src/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-} from "@unsend/ui/src/select";
-import Spinner from "@unsend/ui/src/spinner";
+} from "@usesend/ui/src/select";
+import Spinner from "@usesend/ui/src/spinner";
 import {
   Table,
   TableBody,
@@ -15,7 +15,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@unsend/ui/src/table";
+} from "@usesend/ui/src/table";
 import { formatDistanceToNow } from "date-fns";
 import Image from "next/image";
 import { useUrlState } from "~/hooks/useUrlState";
@@ -23,15 +23,36 @@ import { api } from "~/trpc/react";
 import { getGravatarUrl } from "~/utils/gravatar-utils";
 import DeleteContact from "./delete-contact";
 import EditContact from "./edit-contact";
-import { Input } from "@unsend/ui/src/input";
+import { Input } from "@usesend/ui/src/input";
 import { useDebouncedCallback } from "use-debounce";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@unsend/ui/src/tooltip";
+} from "@usesend/ui/src/tooltip";
 import { UnsubscribeReason } from "@prisma/client";
+import { Download } from "lucide-react";
+
+function sanitizeFilename(
+  name: string | undefined,
+  fallback = "contacts",
+): string {
+  if (!name) return fallback;
+
+  // Remove or replace unsafe characters:
+  // - Path separators: / \
+  // - Reserved characters: : * ? " < > |
+  // - Control characters (0x00-0x1F, 0x7F)
+  // - Single quotes and backticks
+  const sanitized = name.replace(/[/\\:*?"<>|'\x00-\x1F\x7F]/g, "-").trim();
+
+  // Limit length to prevent excessively long filenames (max 100 chars)
+  const limited = sanitized.slice(0, 100).trim();
+
+  // Return fallback if result is empty after sanitization
+  return limited || fallback;
+}
 
 function getUnsubscribeReason(reason: UnsubscribeReason) {
   switch (reason) {
@@ -48,8 +69,10 @@ function getUnsubscribeReason(reason: UnsubscribeReason) {
 
 export default function ContactList({
   contactBookId,
+  contactBookName,
 }: {
   contactBookId: string;
+  contactBookName?: string;
 }) {
   const [page, setPage] = useUrlState("page", "1");
   const [status, setStatus] = useUrlState("status");
@@ -73,10 +96,80 @@ export default function ContactList({
     setSearch(value);
   }, 1000);
 
+  const exportQuery = api.contacts.exportContacts.useQuery(
+    {
+      contactBookId,
+      search: search ?? undefined,
+      subscribed:
+        status === "Subscribed"
+          ? true
+          : status === "Unsubscribed"
+            ? false
+            : undefined,
+    },
+    {
+      enabled: false,
+    },
+  );
+
+  const escapeCell = (str: string): string => {
+    // Wrap in quotes if contains comma, newline, or quote
+    if (str.includes(",") || str.includes("\n") || str.includes('"')) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  };
+
+  const handleExport = async () => {
+    const result = await exportQuery.refetch();
+    if (!result.data) return;
+
+    // CSV Header
+    const headers = [
+      "Email",
+      "First Name",
+      "Last Name",
+      "Subscribed",
+      "Unsubscribe Reason",
+      "Created At",
+    ];
+
+    // CSV Rows
+    const rows = result.data.map((contact) => [
+      escapeCell(contact.email ?? ""),
+      escapeCell(contact.firstName ?? ""),
+      escapeCell(contact.lastName ?? ""),
+      escapeCell(contact.subscribed ? "Yes" : "No"),
+      escapeCell(contact.unsubscribeReason ?? ""),
+      escapeCell(contact.createdAt.toISOString()),
+    ]);
+
+    // Build CSV with UTF-8 BOM
+    const csvContent = [
+      headers.map(escapeCell).join(","),
+      ...rows.map((row) => row.join(",")),
+    ].join("\n");
+    const blob = new Blob([csvContent], {
+      type: "text/csv;charset=utf-8;",
+    });
+
+    // Download
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    const today = new Date().toISOString().split("T")[0];
+    const safeContactBookName = sanitizeFilename(contactBookName);
+    link.download = `contacts-${safeContactBookName}-${today}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <TooltipProvider>
       <div className="mt-10 flex flex-col gap-4">
-        <div className="flex justify-between">
+        <div className="flex justify-between items-center">
           <div>
             <Input
               placeholder="Search by email or name"
@@ -85,25 +178,43 @@ export default function ContactList({
               onChange={(e) => debouncedSearch(e.target.value)}
             />
           </div>
-          <Select
-            value={status ?? "All"}
-            onValueChange={(val) => setStatus(val === "All" ? null : val)}
-          >
-            <SelectTrigger className="w-[180px] capitalize">
-              {status || "All statuses"}
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="All" className=" capitalize">
-                All statuses
-              </SelectItem>
-              <SelectItem value="Subscribed" className=" capitalize">
-                Subscribed
-              </SelectItem>
-              <SelectItem value="Unsubscribed" className=" capitalize">
-                Unsubscribed
-              </SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex gap-2">
+            <Select
+              value={status ?? "All"}
+              onValueChange={(val) => setStatus(val === "All" ? null : val)}
+            >
+              <SelectTrigger className="w-[180px] capitalize">
+                {status || "All statuses"}
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All" className=" capitalize">
+                  All statuses
+                </SelectItem>
+                <SelectItem value="Subscribed" className=" capitalize">
+                  Subscribed
+                </SelectItem>
+                <SelectItem value="Unsubscribed" className=" capitalize">
+                  Unsubscribed
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              onClick={handleExport}
+              disabled={exportQuery.isFetching}
+              size="sm"
+              variant="outline"
+            >
+              {exportQuery.isFetching ? (
+                <Spinner
+                  className="w-4 h-4 mr-2"
+                  innerSvgClass="stroke-primary"
+                />
+              ) : (
+                <Download className="w-4 h-4 mr-2" />
+              )}
+              Export
+            </Button>
+          </div>
         </div>
         <div className="flex flex-col rounded-xl border border-broder shadow">
           <Table className="">
@@ -152,13 +263,13 @@ export default function ContactList({
                     </TableCell>
                     <TableCell>
                       {contact.subscribed ? (
-                        <div className="text-center w-[130px] rounded capitalize py-1 text-xs bg-green-500/15 dark:bg-green-600/10 text-green-700 dark:text-green-600/90 border border-green-500/25 dark:border-green-700/25">
+                        <div className="text-center w-[130px] rounded capitalize py-1 text-xs bg-green/15 text-green border border-green/25">
                           Subscribed
                         </div>
                       ) : (
                         <Tooltip>
                           <TooltipTrigger>
-                            <div className="text-center w-[130px] rounded capitalize py-1 text-xs bg-red-500/10 text-red-600 dark:text-red-700/90 border border-red-600/10">
+                            <div className="text-center w-[130px] rounded capitalize py-1 text-xs bg-red/10 text-red border border-red/10">
                               Unsubscribed
                             </div>
                           </TooltipTrigger>
@@ -166,7 +277,7 @@ export default function ContactList({
                             <p>
                               {getUnsubscribeReason(
                                 contact.unsubscribeReason ??
-                                  UnsubscribeReason.UNSUBSCRIBED
+                                  UnsubscribeReason.UNSUBSCRIBED,
                               )}
                             </p>
                           </TooltipContent>

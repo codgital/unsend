@@ -1,7 +1,9 @@
 import { PrismaClient } from "@prisma/client";
 import { env } from "~/env";
+import { logger } from "./logger/log";
 
 const createPrismaClient = () => {
+  logger.info("Creating Prisma client");
   const client = new PrismaClient({
     log:
       env.NODE_ENV === "development" ? ["query", "error", "warn"] : ["error"],
@@ -17,4 +19,4 @@ const globalForPrisma = globalThis as unknown as {
 
 export const db = globalForPrisma.prisma ?? createPrismaClient();
 
-if (env.NODE_ENV !== "production") globalForPrisma.prisma = db;
+globalForPrisma.prisma = db;

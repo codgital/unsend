@@ -1,6 +1,6 @@
 import { render } from "@react-email/render";
 import * as React from "react";
-import { Unsend } from "./unsend";
+import { UseSend } from "./usesend";
 import { paths } from "../types/schema";
 import { ErrorResponse } from "../types";
 
@@ -67,24 +67,34 @@ type BatchEmailResponse = {
   error: ErrorResponse | null;
 };
 
+type EmailRequestOptions = {
+  idempotencyKey?: string;
+};
+
 export class Emails {
-  constructor(private readonly unsend: Unsend) {
-    this.unsend = unsend;
+  constructor(private readonly usesend: UseSend) {
+    this.usesend = usesend;
   }
 
-  async send(payload: SendEmailPayload) {
-    return this.create(payload);
+  async send(payload: SendEmailPayload, options?: EmailRequestOptions) {
+    return this.create(payload, options);
   }
 
-  async create(payload: SendEmailPayload): Promise<CreateEmailResponse> {
+  async create(
+    payload: SendEmailPayload,
+    options?: EmailRequestOptions,
+  ): Promise<CreateEmailResponse> {
     if (payload.react) {
       payload.html = await render(payload.react as React.ReactElement);
       delete payload.react;
     }
 
-    const data = await this.unsend.post<CreateEmailResponseSuccess>(
+    const data = await this.usesend.post<CreateEmailResponseSuccess>(
       "/emails",
-      payload
+      payload,
+      options?.idempotencyKey
+        ? { headers: { "Idempotency-Key": options.idempotencyKey } }
+        : undefined,
     );
 
     return data;
@@ -96,11 +106,17 @@ export class Emails {
    * @param payload An array of email payloads. Max 100 emails.
    * @returns A promise that resolves to the list of created email IDs or an error.
    */
-  async batch(payload: BatchEmailPayload): Promise<BatchEmailResponse> {
+  async batch(
+    payload: BatchEmailPayload,
+    options?: EmailRequestOptions,
+  ): Promise<BatchEmailResponse> {
     // Note: React element rendering is not supported in batch mode.
-    const response = await this.unsend.post<BatchEmailResponseSuccess>(
+    const response = await this.usesend.post<BatchEmailResponseSuccess>(
       "/emails/batch",
-      payload
+      payload,
+      options?.idempotencyKey
+        ? { headers: { "Idempotency-Key": options.idempotencyKey } }
+        : undefined,
     );
     return {
       data: response.data ? response.data.data : null,
@@ -109,9 +125,10 @@ export class Emails {
   }
 
   async get(id: string): Promise<GetEmailResponse> {
-    const data = await this.unsend.get<GetEmailResponseSuccess>(
+    const data = await this.usesend.get<GetEmailResponseSuccess>(
       `/emails/${id}`
     );
+
     return data;
   }
 
@@ -119,7 +136,7 @@ export class Emails {
     id: string,
     payload: UpdateEmailPayload
   ): Promise<UpdateEmailResponse> {
-    const data = await this.unsend.patch<UpdateEmailResponseSuccess>(
+    const data = await this.usesend.patch<UpdateEmailResponseSuccess>(
       `/emails/${id}`,
       payload
     );
@@ -127,7 +144,7 @@ export class Emails {
   }
 
   async cancel(id: string): Promise<CancelEmailResponse> {
-    const data = await this.unsend.post<CancelEmailResponseSuccess>(
+    const data = await this.usesend.post<CancelEmailResponseSuccess>(
       `/emails/${id}/cancel`,
       {}
     );

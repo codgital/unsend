@@ -1,6 +1,9 @@
 import Stripe from "stripe";
 import { env } from "~/env";
 import { db } from "../db";
+import { sendSubscriptionConfirmationEmail } from "../mailer";
+import { TeamService } from "../service/team-service";
+import { logger } from "../logger/log";
 
 export function getStripe() {
   if (!env.STRIPE_SECRET_KEY) {
@@ -14,12 +17,9 @@ async function createCustomerForTeam(teamId: number) {
   const stripe = getStripe();
   const customer = await stripe.customers.create({ metadata: { teamId } });
 
-  await db.team.update({
-    where: { id: teamId },
-    data: {
-      stripeCustomerId: customer.id,
-      billingEmail: customer.email,
-    },
+  await TeamService.updateTeam(teamId, {
+    billingEmail: customer.email,
+    stripeCustomerId: customer.id,
   });
 
   return customer;
@@ -47,7 +47,11 @@ export async function createCheckoutSessionForTeam(teamId: number) {
     customerId = customer.id;
   }
 
-  if (!env.STRIPE_BASIC_PRICE_ID || !customerId) {
+  if (
+    !env.STRIPE_BASIC_PRICE_ID ||
+    !env.STRIPE_BASIC_USAGE_PRICE_ID ||
+    !customerId
+  ) {
     throw new Error("Stripe prices are not set");
   }
 
@@ -57,6 +61,10 @@ export async function createCheckoutSessionForTeam(teamId: number) {
     line_items: [
       {
         price: env.STRIPE_BASIC_PRICE_ID,
+        quantity: 1,
+      },
+      {
+        price: env.STRIPE_BASIC_USAGE_PRICE_ID,
       },
     ],
     success_url: `${env.NEXTAUTH_URL}/payments?success=true&session_id={CHECKOUT_SESSION_ID}`,
@@ -70,8 +78,13 @@ export async function createCheckoutSessionForTeam(teamId: number) {
   return session;
 }
 
-function getPlanFromPriceId(priceId: string) {
-  if (priceId === env.STRIPE_BASIC_PRICE_ID) {
+function getPlanFromPriceIds(priceIds: string[]) {
+  if (
+    (env.STRIPE_BASIC_PRICE_ID &&
+      priceIds.includes(env.STRIPE_BASIC_PRICE_ID)) ||
+    (env.STRIPE_LEGACY_BASIC_PRICE_ID &&
+      priceIds.includes(env.STRIPE_LEGACY_BASIC_PRICE_ID))
+  ) {
     return "BASIC";
   }
 
@@ -112,6 +125,8 @@ export async function syncStripeData(customerId: string) {
     return;
   }
 
+  const wasPaid = team.isActive && team.plan !== "FREE";
+
   const subscriptions = await stripe.subscriptions.list({
     customer: customerId,
     limit: 1,
@@ -129,11 +144,20 @@ export async function syncStripeData(customerId: string) {
     return;
   }
 
+  const priceIds = subscription.items.data
+    .map((item) => item.price?.id)
+    .filter((id): id is string => Boolean(id));
+
+  const nextPlan = getPlanFromPriceIds(priceIds);
+  const isNowPaid = subscription.status === "active" && nextPlan !== "FREE";
+  const shouldSendSubscriptionConfirmation = !wasPaid && isNowPaid;
+
   await db.subscription.upsert({
     where: { id: subscription.id },
     update: {
       status: subscription.status,
       priceId: subscription.items.data[0]?.price?.id || "",
+      priceIds: priceIds,
       currentPeriodEnd: new Date(
         subscription.items.data[0]?.current_period_end * 1000
       ),
@@ -150,6 +174,7 @@ export async function syncStripeData(customerId: string) {
       id: subscription.id,
       status: subscription.status,
       priceId: subscription.items.data[0]?.price?.id || "",
+      priceIds: priceIds,
       currentPeriodEnd: new Date(
         subscription.items.data[0]?.current_period_end * 1000
       ),
@@ -164,11 +189,25 @@ export async function syncStripeData(customerId: string) {
     },
   });
 
-  await db.team.update({
-    where: { id: team.id },
-    data: {
-      plan: getPlanFromPriceId(subscription.items.data[0]?.price?.id || ""),
-      isActive: subscription.status === "active",
-    },
+  await TeamService.updateTeam(team.id, {
+    plan: subscription.status === "canceled" ? "FREE" : nextPlan,
+    isActive: subscription.status === "active",
   });
+
+  if (shouldSendSubscriptionConfirmation) {
+    try {
+      const teamUsers = await TeamService.getTeamUsers(team.id);
+      await Promise.all(
+        teamUsers
+          .map((tu) => tu.user?.email)
+          .filter((email): email is string => Boolean(email))
+          .map((email) => sendSubscriptionConfirmationEmail(email))
+      );
+    } catch (err) {
+      logger.error(
+        { err, teamId: team.id },
+        "[Billing]: Failed sending subscription confirmation email"
+      );
+    }
+  }
 }

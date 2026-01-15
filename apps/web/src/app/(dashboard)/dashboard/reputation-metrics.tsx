@@ -3,7 +3,7 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@unsend/ui/src/tooltip";
+} from "@usesend/ui/src/tooltip";
 import {
   CheckCircle2,
   CheckCircle2Icon,
@@ -90,11 +90,11 @@ export function ReputationMetrics({ days, domain }: ReputationMetricsProps) {
 
   return (
     <TooltipProvider>
-      <div className="flex gap-10 w-full">
-        <div className="w-1/2 border rounded-xl shadow p-4">
+      <div className="flex flex-col sm:flex-row gap-10 w-full">
+        <div className="w-full sm:w-1/2 border rounded-xl shadow p-4">
           <div className="flex justify-between">
             <div className=" flex items-center gap-2">
-              <div className="text-muted-foreground">Bounce Rate</div>
+              <div className="text-muted-foreground font-mono">Bounce Rate</div>
               <Tooltip>
                 <TooltipTrigger>
                   <InfoIcon className=" h-3.5  w-3.5 text-muted-foreground" />
@@ -108,7 +108,7 @@ export function ReputationMetrics({ days, domain }: ReputationMetricsProps) {
             <div></div>
           </div>
           <div className="flex items-baseline gap-4">
-            <div className="text-2xl mt-2">
+            <div className="text-2xl mt-2 font-mono">
               {metrics?.bounceRate.toFixed(2)}%
             </div>
             <StatusBadge status={bounceStatus} />
@@ -240,9 +240,11 @@ export function ReputationMetrics({ days, domain }: ReputationMetricsProps) {
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <div className="w-1/2 border rounded-xl shadow p-4">
+        <div className="w-full sm:w-1/2 border rounded-xl shadow p-4">
           <div className=" flex items-center gap-2">
-            <div className=" text-muted-foreground">Complaint Rate</div>
+            <div className=" text-muted-foreground font-mono">
+              Complaint Rate
+            </div>
             <Tooltip>
               <TooltipTrigger>
                 <InfoIcon className=" h-3.5 w-3.5 text-muted-foreground" />
@@ -254,7 +256,7 @@ export function ReputationMetrics({ days, domain }: ReputationMetricsProps) {
             </Tooltip>
           </div>
           <div className="flex items-baseline gap-4">
-            <div className="text-2xl mt-2">
+            <div className="text-2xl mt-2 font-mono">
               {metrics?.complaintRate.toFixed(2)}%
             </div>
             <StatusBadge status={complaintStatus} />

@@ -1,12 +1,12 @@
 "use client";
 
 import { api } from "~/trpc/react";
-import { Spinner } from "@unsend/ui/src/spinner";
-import { Input } from "@unsend/ui/src/input";
-import { Editor } from "@unsend/email-editor";
+import { Spinner } from "@usesend/ui/src/spinner";
+import { Input } from "@usesend/ui/src/input";
+import { Editor } from "@usesend/email-editor";
 import { useState } from "react";
 import { Template } from "@prisma/client";
-import { toast } from "@unsend/ui/src/toaster";
+import { toast } from "@usesend/ui/src/toaster";
 import { useDebouncedCallback } from "use-debounce";
 import { formatDistanceToNow } from "date-fns";
 import { ArrowLeft } from "lucide-react";
@@ -29,7 +29,7 @@ export default function EditTemplatePage({
     { templateId: templateId },
     {
       enabled: !!templateId,
-    }
+    },
   );
 
   if (isLoading) {
@@ -63,7 +63,7 @@ function TemplateEditor({
   const utils = api.useUtils();
 
   const [json, setJson] = useState<Record<string, any> | undefined>(
-    template.content ? JSON.parse(template.content) : undefined
+    template.content ? JSON.parse(template.content) : undefined,
   );
   const [isSaving, setIsSaving] = useState(false);
   const [name, setName] = useState(template.name);
@@ -86,13 +86,13 @@ function TemplateEditor({
 
   const deboucedUpdateTemplate = useDebouncedCallback(
     updateEditorContent,
-    1000
+    1000,
   );
 
   const handleFileChange = async (file: File) => {
     if (file.size > IMAGE_SIZE_LIMIT) {
       throw new Error(
-        `File should be less than ${IMAGE_SIZE_LIMIT / 1024 / 1024}MB`
+        `File should be less than ${IMAGE_SIZE_LIMIT / 1024 / 1024}MB`,
       );
     }
 
@@ -119,7 +119,7 @@ function TemplateEditor({
   return (
     <div className="p-4 container mx-auto">
       <div className="mx-auto">
-        <div className="mb-4 flex justify-between items-center w-[700px] mx-auto">
+        <div className="mb-4 flex justify-between items-center w-full sm:w-[700px] mx-auto">
           <div className="flex items-center gap-3">
             <Link href="/templates">
               <ArrowLeft className="h-4 w-4" />
@@ -128,7 +128,7 @@ function TemplateEditor({
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className=" border-0 focus:ring-0 focus:outline-none px-0.5 w-[300px]"
+              className=" border-0 focus:ring-0 focus:outline-none px-0.5 w-full sm:w-[300px]"
               onBlur={() => {
                 if (name === template.name || !name) {
                   return;
@@ -143,18 +143,18 @@ function TemplateEditor({
                       toast.error(`${e.message}. Reverting changes.`);
                       setName(template.name);
                     },
-                  }
+                  },
                 );
               }}
             />
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 whitespace-nowrap">
             <div className="flex items-center gap-2 text-sm text-gray-500">
               {isSaving ? (
-                <div className="h-2 w-2 bg-yellow-500 rounded-full" />
+                <div className="h-2 w-2 bg-yellow rounded-full" />
               ) : (
-                <div className="h-2 w-2 bg-emerald-500 rounded-full" />
+                <div className="h-2 w-2 bg-green rounded-full" />
               )}
               {formatDistanceToNow(template.updatedAt) === "less than a minute"
                 ? "just now"
@@ -163,7 +163,7 @@ function TemplateEditor({
           </div>
         </div>
 
-        <div className="flex flex-col mt-4 mb-4 p-4 w-[700px] mx-auto z-50">
+        <div className="flex flex-col mt-4 mb-4 p-4 w-full sm:w-[700px] mx-auto z-50">
           <div className="flex items-center gap-4">
             <label className="block text-sm  w-[80px] text-muted-foreground">
               Subject
@@ -188,7 +188,7 @@ function TemplateEditor({
                       toast.error(`${e.message}. Reverting changes.`);
                       setSubject(template.subject);
                     },
-                  }
+                  },
                 );
               }}
               className="mt-1 py-1 text-sm block w-full outline-none border-b border-transparent  focus:border-border bg-transparent"
@@ -196,8 +196,8 @@ function TemplateEditor({
           </div>
         </div>
 
-        <div className=" rounded-lg bg-gray-50 w-[700px] mx-auto p-10">
-          <div className="w-[600px] mx-auto">
+        <div className=" rounded-lg bg-gray-50 w-full sm:w-[700px] mx-auto p-4 sm:p-10">
+          <div className="w-full sm:w-[600px] mx-auto">
             <Editor
               initialContent={json}
               onUpdate={(content) => {

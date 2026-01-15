@@ -7,66 +7,30 @@ import {
   teamProcedure,
 } from "~/server/api/trpc";
 import * as contactService from "~/server/service/contact-service";
+import * as contactBookService from "~/server/service/contact-book-service";
 
 export const contactsRouter = createTRPCRouter({
   getContactBooks: teamProcedure
     .input(z.object({ search: z.string().optional() }))
-    .query(async ({ ctx: { db, team }, input }) => {
-      return db.contactBook.findMany({
-        where: {
-          teamId: team.id,
-          ...(input.search
-            ? { name: { contains: input.search, mode: "insensitive" } }
-            : {}),
-        },
-        include: {
-          _count: {
-            select: { contacts: true },
-          },
-        },
-      });
+    .query(async ({ ctx: { team }, input }) => {
+      return contactBookService.getContactBooks(team.id, input.search);
     }),
 
   createContactBook: teamProcedure
     .input(
       z.object({
         name: z.string(),
-      })
+      }),
     )
-    .mutation(async ({ ctx: { db, team }, input }) => {
+    .mutation(async ({ ctx: { team }, input }) => {
       const { name } = input;
-      const contactBook = await db.contactBook.create({
-        data: {
-          name,
-          teamId: team.id,
-          properties: {},
-        },
-      });
-
-      return contactBook;
+      return contactBookService.createContactBook(team.id, name);
     }),
 
   getContactBookDetails: contactBookProcedure.query(
-    async ({ ctx: { contactBook, db } }) => {
-      const [totalContacts, unsubscribedContacts, campaigns] =
-        await Promise.all([
-          db.contact.count({
-            where: { contactBookId: contactBook.id },
-          }),
-          db.contact.count({
-            where: { contactBookId: contactBook.id, subscribed: false },
-          }),
-          db.campaign.findMany({
-            where: {
-              contactBookId: contactBook.id,
-              status: CampaignStatus.SENT,
-            },
-            orderBy: {
-              createdAt: "desc",
-            },
-            take: 2,
-          }),
-        ]);
+    async ({ ctx: { contactBook } }) => {
+      const { totalContacts, unsubscribedContacts, campaigns } =
+        await contactBookService.getContactBookDetails(contactBook.id);
 
       return {
         ...contactBook,
@@ -74,7 +38,7 @@ export const contactsRouter = createTRPCRouter({
         unsubscribedContacts,
         campaigns,
       };
-    }
+    },
   ),
 
   updateContactBook: contactBookProcedure
@@ -84,20 +48,17 @@ export const contactsRouter = createTRPCRouter({
         name: z.string().optional(),
         properties: z.record(z.string()).optional(),
         emoji: z.string().optional(),
-      })
+      }),
     )
-    .mutation(async ({ ctx: { db }, input }) => {
+    .mutation(async ({ ctx: { contactBook }, input }) => {
       const { contactBookId, ...data } = input;
-      return db.contactBook.update({
-        where: { id: contactBookId },
-        data,
-      });
+      return contactBookService.updateContactBook(contactBook.id, data);
     }),
 
   deleteContactBook: contactBookProcedure
     .input(z.object({ contactBookId: z.string() }))
-    .mutation(async ({ ctx: { db }, input }) => {
-      return db.contactBook.delete({ where: { id: input.contactBookId } });
+    .mutation(async ({ ctx: { contactBook }, input }) => {
+      return contactBookService.deleteContactBook(contactBook.id);
     }),
 
   contacts: contactBookProcedure
@@ -106,7 +67,7 @@ export const contactsRouter = createTRPCRouter({
         page: z.number().optional(),
         subscribed: z.boolean().optional(),
         search: z.string().optional(),
-      })
+      }),
     )
     .query(async ({ ctx: { db }, input }) => {
       const page = input.page || 1;
@@ -158,19 +119,25 @@ export const contactsRouter = createTRPCRouter({
   addContacts: contactBookProcedure
     .input(
       z.object({
-        contacts: z.array(
-          z.object({
-            email: z.string(),
-            firstName: z.string().optional(),
-            lastName: z.string().optional(),
-            properties: z.record(z.string()).optional(),
-            subscribed: z.boolean().optional(),
-          })
-        ),
-      })
+        contacts: z
+          .array(
+            z.object({
+              email: z.string(),
+              firstName: z.string().optional(),
+              lastName: z.string().optional(),
+              properties: z.record(z.string()).optional(),
+              subscribed: z.boolean().optional(),
+            }),
+          )
+          .max(50000),
+      }),
     )
-    .mutation(async ({ ctx: { contactBook }, input }) => {
-      return contactService.bulkAddContacts(contactBook.id, input.contacts);
+    .mutation(async ({ ctx: { contactBook, team }, input }) => {
+      return contactService.bulkAddContacts(
+        contactBook.id,
+        input.contacts,
+        team.id,
+      );
     }),
 
   updateContact: contactBookProcedure
@@ -182,7 +149,7 @@ export const contactsRouter = createTRPCRouter({
         lastName: z.string().optional(),
         properties: z.record(z.string()).optional(),
         subscribed: z.boolean().optional(),
-      })
+      }),
     )
     .mutation(async ({ input }) => {
       const { contactId, ...contact } = input;
@@ -193,5 +160,48 @@ export const contactsRouter = createTRPCRouter({
     .input(z.object({ contactId: z.string() }))
     .mutation(async ({ input }) => {
       return contactService.deleteContact(input.contactId);
+    }),
+
+  exportContacts: contactBookProcedure
+    .input(
+      z.object({
+        subscribed: z.boolean().optional(),
+        search: z.string().optional(),
+      }),
+    )
+    .query(async ({ ctx: { db }, input }) => {
+      const whereConditions: Prisma.ContactFindManyArgs["where"] = {
+        contactBookId: input.contactBookId,
+        ...(input.subscribed !== undefined
+          ? { subscribed: input.subscribed }
+          : {}),
+        ...(input.search
+          ? {
+              OR: [
+                { email: { contains: input.search, mode: "insensitive" } },
+                { firstName: { contains: input.search, mode: "insensitive" } },
+                { lastName: { contains: input.search, mode: "insensitive" } },
+              ],
+            }
+          : {}),
+      };
+
+      const contacts = await db.contact.findMany({
+        where: whereConditions,
+        select: {
+          email: true,
+          firstName: true,
+          lastName: true,
+          subscribed: true,
+          unsubscribeReason: true,
+          createdAt: true,
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        take: 100000, // Limit to 100k contacts to prevent memory issues
+      });
+
+      return contacts;
     }),
 });

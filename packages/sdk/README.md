@@ -1,51 +1,117 @@
-# Unsend SDK
+# useSend SDK
 
 ## Prerequisites
 
-- [Unsend API key](https://app.unsend.dev/dev-settings/api-keys)
-- [Verified domain](https://app.unsend.dev/domains)
+- [useSend API key](https://app.usesend.com/dev-settings/api-keys)
+- [Verified domain](https://app.usesend.com/domains)
 
 ## Installation
 
 ### NPM
 
 ```bash
-npm install unsend
+npm install usesend
 ```
 
 ### Yarn
 
 ```bash
-yarn add unsend
+yarn add usesend
 ```
 
 ### PNPM
 
 ```bash
-pnpm add unsend
+pnpm add usesend
 ```
 
 ### Bun
 
 ```bash
-bun add unsend
+bun add usesend
 ```
 
 ## Usage
 
 ```javascript
-import { Unsend } from "unsend";
+import { UseSend } from "usesend";
 
-const unsend = new Unsend("us_12345");
+const usesend = new UseSend("us_12345");
 
 // for self-hosted installations you can pass your base URL
-// const unsend = new Unsend("us_12345", "https://my-unsend-instance.com");
+// const usesend = new UseSend("us_12345", "https://app.usesend.com");
 
-unsend.emails.send({
+usesend.emails.send({
   to: "hello@acme.com",
   from: "hello@company.com",
-  subject: "Unsend email",
-  html: "<p>Unsend is the best open source product to send emails</p>",
-  text: "Unsend is the best open source product to send emails",
+  subject: "useSend email",
+  html: "<p>useSend is the best open source product to send emails</p>",
+  text: "useSend is the best open source product to send emails",
 });
+
+// Safely retry sends with an idempotency key
+await usesend.emails.send(
+  {
+    to: "hello@acme.com",
+    from: "hello@company.com",
+    subject: "useSend email",
+    html: "<p>useSend is the best open source product to send emails</p>",
+  },
+  { idempotencyKey: "signup-123" },
+);
+
+// Works for bulk sends too
+await usesend.emails.batch(
+  [
+    {
+      to: "a@example.com",
+      from: "hello@company.com",
+      subject: "Welcome",
+      html: "<p>Hello A</p>",
+    },
+    {
+      to: "b@example.com",
+      from: "hello@company.com",
+      subject: "Welcome",
+      html: "<p>Hello B</p>",
+    },
+  ],
+  { idempotencyKey: "bulk-welcome-1" },
+);
+// Reusing the same key with a different payload returns HTTP 409.
+```
+
+## Campaigns
+
+Create and manage email campaigns:
+
+```javascript
+import { UseSend } from "usesend";
+
+const usesend = new UseSend("us_12345");
+
+// Create a campaign
+const campaign = await usesend.campaigns.create({
+  name: "Welcome Series",
+  from: "hello@company.com",
+  subject: "Welcome to our platform!",
+  contactBookId: "cb_12345",
+  html: "<h1>Welcome!</h1><p>Thanks for joining us.</p>",
+  sendNow: false,
+});
+
+// Schedule a campaign
+await usesend.campaigns.schedule(campaign.data.id, {
+  scheduledAt: "2024-12-01T09:00:00Z",
+  batchSize: 1000,
+});
+
+// Get campaign details
+const details = await usesend.campaigns.get(campaign.data.id);
+
+// Pause a campaign
+await usesend.campaigns.pause(campaign.data.id);
+
+// Resume a campaign
+await usesend.campaigns.resume(campaign.data.id);
 ```

@@ -13,7 +13,7 @@ export const env = createEnv({
       .url()
       .refine(
         (str) => !str.includes("YOUR_MYSQL_URL_HERE"),
-        "You forgot to change the default URL"
+        "You forgot to change the default URL",
       ),
     NODE_ENV: z
       .enum(["development", "test", "production"])
@@ -27,12 +27,13 @@ export const env = createEnv({
       // Since NextAuth.js automatically uses the VERCEL_URL if present.
       (str) => process.env.VERCEL_URL ?? str,
       // VERCEL_URL doesn't include `https` so it cant be validated as a URL
-      process.env.VERCEL ? z.string() : z.string().url()
+      process.env.VERCEL ? z.string() : z.string().url(),
     ),
     GITHUB_ID: z.string().optional(),
     GITHUB_SECRET: z.string().optional(),
     AWS_ACCESS_KEY: z.string(),
     AWS_SECRET_KEY: z.string(),
+    USESEND_API_KEY: z.string().optional(),
     UNSEND_API_KEY: z.string().optional(),
     GOOGLE_CLIENT_ID: z.string().optional(),
     GOOGLE_CLIENT_SECRET: z.string().optional(),
@@ -43,19 +44,32 @@ export const env = createEnv({
       .string()
       .default("1")
       .transform((str) => parseInt(str, 10)),
+    AUTH_EMAIL_RATE_LIMIT: z
+      .string()
+      .default("0")
+      .transform((str) => parseInt(str, 10)),
     FROM_EMAIL: z.string().optional(),
     ADMIN_EMAIL: z.string().optional(),
+    FOUNDER_EMAIL: z.string().optional(),
     DISCORD_WEBHOOK_URL: z.string().optional(),
     REDIS_URL: z.string(),
     S3_COMPATIBLE_ACCESS_KEY: z.string().optional(),
     S3_COMPATIBLE_SECRET_KEY: z.string().optional(),
     S3_COMPATIBLE_API_URL: z.string().optional(),
     S3_COMPATIBLE_PUBLIC_URL: z.string().optional(),
+    S3_COMPATIBLE_BUCKET: z.string().optional(),
     STRIPE_SECRET_KEY: z.string().optional(),
     STRIPE_BASIC_PRICE_ID: z.string().optional(),
+    STRIPE_BASIC_USAGE_PRICE_ID: z.string().optional(),
+    STRIPE_LEGACY_BASIC_PRICE_ID: z.string().optional(),
     STRIPE_WEBHOOK_SECRET: z.string().optional(),
-    SMTP_HOST: z.string().default("smtp.unsend.dev"),
-    SMTP_USER: z.string().default("unsend"),
+    SMTP_HOST: z.string().default("smtp.usesend.com"),
+    SMTP_USER: z.string().default("usesend"),
+    CONTACT_BOOK_ID: z.string().optional(),
+    EMAIL_CLEANUP_DAYS: z
+        .string()
+        .optional()
+        .transform((str) => (str ? parseInt(str, 10) : undefined)),
   },
 
   /**
@@ -69,6 +83,8 @@ export const env = createEnv({
       .string()
       .default("false")
       .transform((str) => str === "true"),
+    NEXT_PUBLIC_APP_VERSION: z.string().optional(),
+    NEXT_PUBLIC_GIT_SHA: z.string().optional(),
   },
 
   /**
@@ -84,6 +100,7 @@ export const env = createEnv({
     GITHUB_SECRET: process.env.GITHUB_SECRET,
     AWS_ACCESS_KEY: process.env.AWS_ACCESS_KEY,
     AWS_SECRET_KEY: process.env.AWS_SECRET_KEY,
+    USESEND_API_KEY: process.env.USESEND_API_KEY,
     UNSEND_API_KEY: process.env.UNSEND_API_KEY,
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
@@ -91,8 +108,12 @@ export const env = createEnv({
     AWS_SES_ENDPOINT: process.env.AWS_SES_ENDPOINT,
     AWS_SNS_ENDPOINT: process.env.AWS_SNS_ENDPOINT,
     API_RATE_LIMIT: process.env.API_RATE_LIMIT,
+    AUTH_EMAIL_RATE_LIMIT: process.env.AUTH_EMAIL_RATE_LIMIT,
     NEXT_PUBLIC_IS_CLOUD: process.env.NEXT_PUBLIC_IS_CLOUD,
+    NEXT_PUBLIC_APP_VERSION: process.env.NEXT_PUBLIC_APP_VERSION,
+    NEXT_PUBLIC_GIT_SHA: process.env.NEXT_PUBLIC_GIT_SHA,
     ADMIN_EMAIL: process.env.ADMIN_EMAIL,
+    FOUNDER_EMAIL: process.env.FOUNDER_EMAIL,
     DISCORD_WEBHOOK_URL: process.env.DISCORD_WEBHOOK_URL,
     REDIS_URL: process.env.REDIS_URL,
     FROM_EMAIL: process.env.FROM_EMAIL,
@@ -100,11 +121,16 @@ export const env = createEnv({
     S3_COMPATIBLE_SECRET_KEY: process.env.S3_COMPATIBLE_SECRET_KEY,
     S3_COMPATIBLE_API_URL: process.env.S3_COMPATIBLE_API_URL,
     S3_COMPATIBLE_PUBLIC_URL: process.env.S3_COMPATIBLE_PUBLIC_URL,
+    S3_COMPATIBLE_BUCKET: process.env.S3_COMPATIBLE_BUCKET,
     STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
     STRIPE_BASIC_PRICE_ID: process.env.STRIPE_BASIC_PRICE_ID,
+    STRIPE_BASIC_USAGE_PRICE_ID: process.env.STRIPE_BASIC_USAGE_PRICE_ID,
+    STRIPE_LEGACY_BASIC_PRICE_ID: process.env.STRIPE_LEGACY_BASIC_PRICE_ID,
     STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
     SMTP_HOST: process.env.SMTP_HOST,
     SMTP_USER: process.env.SMTP_USER,
+    CONTACT_BOOK_ID: process.env.CONTACT_BOOK_ID,
+    EMAIL_CLEANUP_DAYS: process.env.EMAIL_CLEANUP_DAYS,
   },
   /**
    * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially

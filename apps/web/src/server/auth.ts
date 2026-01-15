@@ -27,6 +27,7 @@ declare module "next-auth" {
       id: number;
       isBetaUser: boolean;
       isAdmin: boolean;
+      isWaitlisted: boolean;
       // ...other properties
       // role: UserRole;
     } & DefaultSession["user"];
@@ -37,6 +38,7 @@ declare module "next-auth" {
     id: number;
     isBetaUser: boolean;
     isAdmin: boolean;
+    isWaitlisted: boolean;
   }
 }
 
@@ -53,6 +55,11 @@ function getProviders() {
         clientId: env.GITHUB_ID,
         clientSecret: env.GITHUB_SECRET,
         allowDangerousEmailAccountLinking: true,
+        authorization: {
+          params: {
+            scope: "read:user user:email",
+          },
+        },
       })
     );
   }
@@ -102,6 +109,7 @@ export const authOptions: NextAuthOptions = {
         id: user.id,
         isBetaUser: user.isBetaUser,
         isAdmin: user.email === env.ADMIN_EMAIL,
+        isWaitlisted: user.isWaitlisted,
       },
     }),
   },
@@ -121,7 +129,6 @@ export const authOptions: NextAuthOptions = {
         invitesAvailable = invites.length > 0;
       }
 
-      // No waitlist for self hosting
       if (
         !env.NEXT_PUBLIC_IS_CLOUD ||
         env.NODE_ENV === "development" ||
@@ -130,6 +137,11 @@ export const authOptions: NextAuthOptions = {
         await db.user.update({
           where: { id: user.id },
           data: { isBetaUser: true },
+        });
+      } else {
+        await db.user.update({
+          where: { id: user.id },
+          data: { isBetaUser: true, isWaitlisted: true },
         });
       }
     },

@@ -11,6 +11,10 @@ import { billingRouter } from "./routers/billing";
 import { invitationRouter } from "./routers/invitiation";
 import { dashboardRouter } from "./routers/dashboard";
 import { webhookRouter } from "./routers/webhook";
+import { suppressionRouter } from "./routers/suppression";
+import { limitsRouter } from "./routers/limits";
+import { waitlistRouter } from "./routers/waitlist";
+import { feedbackRouter } from "./routers/feedback";
 
 /**
  * This is the primary router for your server.
@@ -18,18 +22,22 @@ import { webhookRouter } from "./routers/webhook";
  * All routers added in /api/routers should be manually added here.
  */
 export const appRouter = createTRPCRouter({
-  domain: domainRouter,
-  apiKey: apiRouter,
-  email: emailRouter,
-  team: teamRouter,
-  admin: adminRouter,
-  contacts: contactsRouter,
-  campaign: campaignRouter,
-  template: templateRouter,
-  billing: billingRouter,
-  invitation: invitationRouter,
-  dashboard: dashboardRouter,
-  webhook: webhookRouter,
+    domain: domainRouter,
+    apiKey: apiRouter,
+    email: emailRouter,
+    team: teamRouter,
+    admin: adminRouter,
+    contacts: contactsRouter,
+    campaign: campaignRouter,
+    template: templateRouter,
+    billing: billingRouter,
+    invitation: invitationRouter,
+    dashboard: dashboardRouter,
+    webhook: webhookRouter,
+    suppression: suppressionRouter,
+    limits: limitsRouter,
+    waitlist: waitlistRouter,
+    feedback: feedbackRouter,
 });
 
 // export type definition of API

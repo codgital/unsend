@@ -85,6 +85,7 @@ model User {
   emailVerified DateTime?
   image         String?
   isBetaUser    Boolean    @default(false)
+  isWaitlisted  Boolean    @default(false)
   createdAt     DateTime   @default(now())
   accounts      Account[]
   sessions      Session[]
@@ -106,6 +107,10 @@ model Team {
   isActive         Boolean           @default(true)
   apiRateLimit     Int               @default(2)
   billingEmail     String?
+  sesTenantId      String?
+  isVerified       Boolean           @default(false)
+  dailyEmailLimit  Int               @default(10000)
+  isBlocked        Boolean           @default(false)
   teamUsers        TeamUser[]
   domains          Domain[]
   apiKeys          ApiKey[]
@@ -117,6 +122,7 @@ model Team {
   subscription     Subscription[]
   invites          TeamInvite[]
   webhooks         Webhook[]
+  suppressionList  SuppressionList[]
 }
 
 model TeamInvite {
@@ -137,6 +143,7 @@ model Subscription {
   teamId             Int
   status             String
   priceId            String
+  priceIds           String[]
   currentPeriodEnd   DateTime?
   currentPeriodStart DateTime?
   cancelAtPeriodEnd  DateTime?
@@ -179,16 +186,19 @@ model Domain {
   clickTracking Boolean      @default(false)
   openTracking  Boolean      @default(false)
   publicKey     String
+  dkimSelector  String?      @default("usesend")
   dkimStatus    String?
   spfDetails    String?
   dmarcAdded    Boolean      @default(false)
   errorMessage  String?
   subdomain     String?
+  sesTenantId   String?
   isVerifying   Boolean      @default(false)
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
   team          Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
   webhooks      Webhook[]
+  apiKeys       ApiKey[]
 }
 
 enum ApiPermission {
@@ -203,11 +213,13 @@ model ApiKey {
   partialToken String
   name         String
   permission   ApiPermission @default(SENDING)
+  domainId     Int?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   lastUsed     DateTime?
   teamId       Int
   team         Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  domain       Domain?       @relation(fields: [domainId], references: [id], onDelete: SetNull, onUpdate: Cascade)
 }
 
 enum EmailStatus {
@@ -224,6 +236,7 @@ enum EmailStatus {
   COMPLAINED
   FAILED
   CANCELLED
+  SUPPRESSED
 }
 
 model Email {
@@ -248,10 +261,21 @@ model Email {
   campaignId   String?
   contactId    String?
   inReplyToId  String?
+  headers      String?
   team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
   emailEvents  EmailEvent[]
 
+  @@index([campaignId, contactId])
   @@index([createdAt(sort: Desc)])
+}
+
+model CampaignEmail {
+  campaignId String
+  contactId  String
+  emailId    String
+  createdAt  DateTime @default(now())
+
+  @@id([campaignId, contactId])
 }
 
 model EmailEvent {
@@ -259,10 +283,12 @@ model EmailEvent {
   emailId   String
   status    EmailStatus
   data      Json?
+  teamId    Int?
   createdAt DateTime    @default(now())
   email     Email       @relation(fields: [emailId], references: [id], onDelete: Cascade)
 
   @@index([emailId])
+  @@index([teamId])
 }
 
 model ContactBook {
@@ -285,6 +311,12 @@ enum UnsubscribeReason {
   UNSUBSCRIBED
 }
 
+enum SuppressionReason {
+  HARD_BOUNCE
+  COMPLAINT
+  MANUAL
+}
+
 model Contact {
   id                String             @id @default(cuid())
   firstName         String?
@@ -300,44 +332,54 @@ model Contact {
   contactBook ContactBook @relation(fields: [contactBookId], references: [id], onDelete: Cascade)
 
   @@unique([contactBookId, email])
+  @@index([contactBookId, id])
 }
 
 enum CampaignStatus {
   DRAFT
   SCHEDULED
+  RUNNING
+  PAUSED
   SENT
 }
 
 model Campaign {
-  id            String         @id @default(cuid())
-  name          String
-  teamId        Int
-  from          String
-  cc            String[]
-  bcc           String[]
-  replyTo       String[]
-  domainId      Int
-  subject       String
-  previewText   String?
-  html          String?
-  content       String?
-  contactBookId String?
-  total         Int            @default(0)
-  sent          Int            @default(0)
-  delivered     Int            @default(0)
-  opened        Int            @default(0)
-  clicked       Int            @default(0)
-  unsubscribed  Int            @default(0)
-  bounced       Int            @default(0)
-  hardBounced   Int            @default(0)
-  complained    Int            @default(0)
-  status        CampaignStatus @default(DRAFT)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id                 String         @id @default(cuid())
+  name               String
+  teamId             Int
+  from               String
+  cc                 String[]
+  bcc                String[]
+  replyTo            String[]
+  domainId           Int
+  subject            String
+  previewText        String?
+  html               String?
+  content            String?
+  contactBookId      String?
+  scheduledAt        DateTime?
+  total              Int            @default(0)
+  sent               Int            @default(0)
+  delivered          Int            @default(0)
+  opened             Int            @default(0)
+  clicked            Int            @default(0)
+  unsubscribed       Int            @default(0)
+  bounced            Int            @default(0)
+  hardBounced        Int            @default(0)
+  complained         Int            @default(0)
+  isApi              Boolean        @default(false)
+  status             CampaignStatus @default(DRAFT)
+  batchSize          Int            @default(500)
+  batchWindowMinutes Int            @default(0)
+  lastCursor         String?
+  lastSentAt         DateTime?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
   @@index([createdAt(sort: Desc)])
+  @@index([status, scheduledAt])
 }
 
 model Template {
@@ -416,4 +458,18 @@ model Webhook {
   domain Domain? @relation(fields: [domainId], references: [id], onDelete: SetNull)
 
   @@index([teamId])
+}
+
+model SuppressionList {
+  id        String            @id @default(cuid())
+  email     String // The suppressed email address
+  teamId    Int // Team that owns this suppression
+  reason    SuppressionReason // Why it was suppressed
+  source    String? // Source email ID that triggered suppression
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, email])
 }

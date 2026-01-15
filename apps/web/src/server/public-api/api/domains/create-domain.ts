@@ -2,7 +2,6 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { DomainSchema } from "~/lib/zod/domain-schema";
 import { PublicAPIApp } from "~/server/public-api/hono";
 import { createDomain as createDomainService } from "~/server/service/domain-service";
-import { getTeamFromToken } from "~/server/public-api/auth";
 
 const route = createRoute({
   method: "post",
@@ -36,7 +35,12 @@ function createDomain(app: PublicAPIApp) {
   app.openapi(route, async (c) => {
     const team = c.var.team;
     const body = c.req.valid("json");
-    const response = await createDomainService(team.id, body.name, body.region);
+    const response = await createDomainService(
+      team.id,
+      body.name,
+      body.region,
+      team.sesTenantId ?? undefined
+    );
 
     return c.json(response);
   });

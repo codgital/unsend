@@ -2,6 +2,7 @@ import React from "react";
 import {
   BarChart,
   Bar,
+  Rectangle,
   XAxis,
   YAxis,
   Tooltip,
@@ -13,14 +14,44 @@ import {
 import { EmailStatusIcon } from "../emails/email-status-badge";
 import { EmailStatus } from "@prisma/client";
 import { api } from "~/trpc/react";
-import Spinner from "@unsend/ui/src/spinner";
-import { useTheme } from "@unsend/ui";
-import { EMAIL_COLORS } from "~/lib/constants/colors";
+import Spinner from "@usesend/ui/src/spinner";
+import { useTheme } from "@usesend/ui";
 import { useColors } from "./hooks/useColors";
 
 interface EmailChartProps {
   days: number;
   domain: string | null;
+}
+
+const STACK_ORDER: string[] = [
+  "delivered",
+  "bounced",
+  "complained",
+  "opened",
+  "clicked",
+] as const;
+
+type StackKey = (typeof STACK_ORDER)[number];
+
+function createRoundedTopShape(currentKey: StackKey) {
+  const currentIndex = STACK_ORDER.indexOf(currentKey);
+  return (props: any) => {
+    const payload = props.payload as
+      | Partial<Record<StackKey, number>>
+      | undefined;
+    let hasAbove = false;
+    for (let i = currentIndex + 1; i < STACK_ORDER.length; i++) {
+      const key = STACK_ORDER[i];
+      const val = key ? (payload?.[key] ?? 0) : 0;
+      if (val > 0) {
+        hasAbove = true;
+        break;
+      }
+    }
+
+    const radius = hasAbove ? [0, 0, 0, 0] : [2.5, 2.5, 0, 0];
+    return <Rectangle {...props} radius={radius as any} />;
+  };
 }
 
 export default function EmailChart({ days, domain }: EmailChartProps) {
@@ -36,7 +67,7 @@ export default function EmailChart({ days, domain }: EmailChartProps) {
     <div className="flex flex-col gap-16">
       {!statusQuery.isLoading && statusQuery.data ? (
         <div className="w-full h-[450px] border shadow rounded-xl p-4">
-          <div>
+          <div className="p-2 overflow-x-auto">
             {/* <div className="mb-4 text-sm">Emails</div> */}
 
             <div className="flex gap-10">
@@ -108,7 +139,9 @@ export default function EmailChart({ days, domain }: EmailChartProps) {
               {/* <YAxis fontSize={12} className="font-mono" /> */}
               <Tooltip
                 content={({ payload }) => {
-                  const data = payload?.[0]?.payload as Record<
+                  if (!payload || payload.length === 0) return null;
+
+                  const data = payload[0]?.payload as Record<
                     | "sent"
                     | "delivered"
                     | "opened"
@@ -118,7 +151,16 @@ export default function EmailChart({ days, domain }: EmailChartProps) {
                     number
                   > & { date: string };
 
-                  if (!data || data.sent === 0) return null;
+                  if (!data) return null;
+
+                  const hasAnyData =
+                    (data.delivered || 0) > 0 ||
+                    (data.bounced || 0) > 0 ||
+                    (data.complained || 0) > 0 ||
+                    (data.opened || 0) > 0 ||
+                    (data.clicked || 0) > 0;
+
+                  if (!hasAnyData) return null;
 
                   return (
                     <div className=" bg-background border shadow-lg p-2 rounded-xl flex flex-col gap-2 px-4">
@@ -127,7 +169,10 @@ export default function EmailChart({ days, domain }: EmailChartProps) {
                       </p>
                       {data.delivered ? (
                         <div className="flex gap-2 items-center">
-                          <div className="w-2.5 h-2.5 bg-[#40a02bcc] dark:bg-[#a6e3a1] rounded-[2px]"></div>
+                          <div
+                            className="w-2.5 h-2.5 rounded-[2px]"
+                            style={{ backgroundColor: currentColors.delivered }}
+                          ></div>
                           <p className="text-xs text-muted-foreground w-[70px]">
                             Delivered
                           </p>
@@ -136,7 +181,10 @@ export default function EmailChart({ days, domain }: EmailChartProps) {
                       ) : null}
                       {data.bounced ? (
                         <div className="flex gap-2 items-center">
-                          <div className="w-2.5 h-2.5 bg-[#d20f39cc] dark:bg-[#f38ba8] rounded-[2px]"></div>
+                          <div
+                            className="w-2.5 h-2.5 rounded-[2px]"
+                            style={{ backgroundColor: currentColors.bounced }}
+                          ></div>
                           <p className="text-xs text-muted-foreground w-[70px]">
                             Bounced
                           </p>
@@ -145,7 +193,12 @@ export default function EmailChart({ days, domain }: EmailChartProps) {
                       ) : null}
                       {data.complained ? (
                         <div className="flex gap-2 items-center">
-                          <div className="w-2.5 h-2.5 bg-[#df8e1dcc] dark:bg-[#F9E2AF] rounded-[2px]"></div>
+                          <div
+                            className="w-2.5 h-2.5 rounded-[2px]"
+                            style={{
+                              backgroundColor: currentColors.complained,
+                            }}
+                          ></div>
                           <p className="text-xs text-muted-foreground w-[70px]">
                             Complained
                           </p>
@@ -154,7 +207,10 @@ export default function EmailChart({ days, domain }: EmailChartProps) {
                       ) : null}
                       {data.opened ? (
                         <div className="flex gap-2 items-center">
-                          <div className="w-2.5 h-2.5 bg-[#8839efcc] dark:bg-[#cba6f7] rounded-[2px]"></div>
+                          <div
+                            className="w-2.5 h-2.5 rounded-[2px]"
+                            style={{ backgroundColor: currentColors.opened }}
+                          ></div>
                           <p className="text-xs text-muted-foreground w-[70px]">
                             Opened
                           </p>
@@ -163,7 +219,10 @@ export default function EmailChart({ days, domain }: EmailChartProps) {
                       ) : null}
                       {data.clicked ? (
                         <div className="flex gap-2 items-center">
-                          <div className="w-2.5 h-2.5 bg-[#04a5e5cc] dark:bg-[#93c5fd] rounded-[2px]"></div>
+                          <div
+                            className="w-2.5 h-2.5 rounded-[2px]"
+                            style={{ backgroundColor: currentColors.clicked }}
+                          ></div>
                           <p className="text-xs text-muted-foreground w-[70px]">
                             Clicked
                           </p>
@@ -181,15 +240,32 @@ export default function EmailChart({ days, domain }: EmailChartProps) {
                 dataKey="delivered"
                 stackId="a"
                 fill={currentColors.delivered}
+                shape={createRoundedTopShape("delivered")}
               />
-              <Bar dataKey="bounced" stackId="a" fill={currentColors.bounced} />
+              <Bar
+                dataKey="bounced"
+                stackId="a"
+                fill={currentColors.bounced}
+                shape={createRoundedTopShape("bounced")}
+              />
               <Bar
                 dataKey="complained"
                 stackId="a"
                 fill={currentColors.complained}
+                shape={createRoundedTopShape("complained")}
               />
-              <Bar dataKey="opened" stackId="a" fill={currentColors.opened} />
-              <Bar dataKey="clicked" stackId="a" fill={currentColors.clicked} />
+              <Bar
+                dataKey="opened"
+                stackId="a"
+                fill={currentColors.opened}
+                shape={createRoundedTopShape("opened")}
+              />
+              <Bar
+                dataKey="clicked"
+                stackId="a"
+                fill={currentColors.clicked}
+                shape={createRoundedTopShape("clicked")}
+              />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -221,7 +297,7 @@ const DashboardItemCard: React.FC<DashboardItemCardProps> = ({
         <div className="text-foreground font-light text-2xl  font-mono">
           {count}
         </div>
-        {status !== "total" ? (
+        {status !== "total" && isFinite(percentage) ? (
           <div className="text-sm pb-1">
             {count > 0 ? (percentage * 100).toFixed(0) : 0}%
           </div>
@@ -236,16 +312,34 @@ const EmailChartItem: React.FC<DashboardItemCardProps> = ({
   count,
   percentage,
 }) => {
-  const color = EMAIL_COLORS[status];
+  const currentColors = useColors();
+
+  const getColorForStatus = (status: EmailStatus | "total"): string => {
+    switch (status) {
+      case "DELIVERED":
+        return currentColors.delivered;
+      case "BOUNCED":
+        return currentColors.bounced;
+      case "COMPLAINED":
+        return currentColors.complained;
+      case "OPENED":
+        return currentColors.opened;
+      case "CLICKED":
+        return currentColors.clicked;
+      case "total":
+      default:
+        return "#6b7280"; // gray-500 for total and other statuses
+    }
+  };
 
   return (
     <div className="flex gap-3 items-stretch font-mono">
-      {/* <div className={`${color} w-0.5  rounded-full`}></div> */}
-
       <div>
         <div className=" flex  items-center gap-2">
-          <div className={`${color} w-2.5 h-2.5 rounded-[3px]`}></div>
-          {/* <div className={`${color} w-0.5  rounded-full`}></div> */}
+          <div
+            className="w-2.5 h-2.5 rounded-[3px]"
+            style={{ backgroundColor: getColorForStatus(status) }}
+          ></div>
 
           <div className="text-xs uppercase text-muted-foreground ">
             {status.toLowerCase()}
@@ -254,7 +348,7 @@ const EmailChartItem: React.FC<DashboardItemCardProps> = ({
         <div className="mt-1 -ml-0.5 ">
           <span className="text-xl font-mono">{count}</span>
           <span className="text-xs ml-2 font-mono">
-            {status !== "total"
+            {status !== "total" && isFinite(percentage)
               ? `(${count > 0 ? (percentage * 100).toFixed(0) : 0}%)`
               : null}
           </span>
