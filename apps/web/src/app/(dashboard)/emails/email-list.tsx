@@ -7,7 +7,7 @@ import {
   TableHead,
   TableBody,
   TableCell,
-} from "@unsend/ui/src/table";
+} from "@usesend/ui/src/table";
 import { api } from "~/trpc/react";
 import {
   Mail,
@@ -16,6 +16,7 @@ import {
   MailSearch,
   MailWarning,
   MailX,
+  Download,
 } from "lucide-react";
 import { formatDate, formatDistanceToNow } from "date-fns";
 import { EmailStatus } from "@prisma/client";
@@ -23,35 +24,35 @@ import { EmailStatusBadge } from "./email-status-badge";
 import EmailDetails from "./email-details";
 import dynamic from "next/dynamic";
 import { useUrlState } from "~/hooks/useUrlState";
-import { Button } from "@unsend/ui/src/button";
+import { Button } from "@usesend/ui/src/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-} from "@unsend/ui/src/select";
-import Spinner from "@unsend/ui/src/spinner";
+} from "@usesend/ui/src/select";
+import Spinner from "@usesend/ui/src/spinner";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@unsend/ui/src/tooltip";
-import { Input } from "@unsend/ui/src/input";
+} from "@usesend/ui/src/tooltip";
+import { Input } from "@usesend/ui/src/input";
 import { DEFAULT_QUERY_LIMIT } from "~/lib/constants";
 import { useDebouncedCallback } from "use-debounce";
 import { useState } from "react";
-import { SheetTitle, SheetDescription } from "@unsend/ui/src/sheet";
+import { SheetTitle, SheetDescription } from "@usesend/ui/src/sheet";
 
 /* Stupid hydrating error. And I so stupid to understand the stupid NextJS docs */
 const DynamicSheetWithNoSSR = dynamic(
-  () => import("@unsend/ui/src/sheet").then((mod) => mod.Sheet),
-  { ssr: false }
+  () => import("@usesend/ui/src/sheet").then((mod) => mod.Sheet),
+  { ssr: false },
 );
 
 const DynamicSheetContentWithNoSSR = dynamic(
-  () => import("@unsend/ui/src/sheet").then((mod) => mod.SheetContent),
-  { ssr: false }
+  () => import("@usesend/ui/src/sheet").then((mod) => mod.SheetContent),
+  { ssr: false },
 );
 
 export default function EmailsList() {
@@ -73,6 +74,16 @@ export default function EmailsList() {
     search,
     apiId: apiId,
   });
+
+  const exportQuery = api.email.exportEmails.useQuery(
+    {
+      status: status?.toUpperCase() as EmailStatus,
+      domain: domainId,
+      search,
+      apiId: apiId,
+    },
+    { enabled: false },
+  );
 
   const { data: domainsQuery } = api.domain.domains.useQuery();
   const { data: apiKeysQuery } = api.apiKey.getApiKeys.useQuery();
@@ -99,21 +110,73 @@ export default function EmailsList() {
     setSearch(value);
   }, 1000);
 
+  const handleExport = async () => {
+    try {
+      const resp = await exportQuery.refetch();
+      if (!resp.data) return;
+
+      const escape = (val: unknown) => {
+        const s = String(val ?? "");
+        const startsRisky = /^\s*[=+\-@]/.test(s);
+        const safe = (startsRisky ? "'" : "") + s.replace(/"/g, '""');
+        return /[",\r\n]/.test(safe) ? `"${safe}"` : safe;
+      };
+
+      const header = [
+        "To",
+        "Status",
+        "Subject",
+        "Sent At",
+        "Bounce Type",
+        "Bounce Subtype",
+        "Bounce Reason",
+      ].join(",");
+      const rows = resp.data.map((e) =>
+        [
+          e.to,
+          e.status,
+          e.subject,
+          e.sentAt,
+          e.bounceType,
+          e.bounceSubType,
+          e.bounceReason,
+        ]
+          .map(escape)
+          .join(","),
+      );
+      const csv = [header, ...rows].join("\n");
+
+      const blob = new Blob(["\uFEFF" + csv], {
+        type: "text/csv;charset=utf-8",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `emails-${new Date().toISOString().split("T")[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Export failed", err);
+    }
+  };
+
   return (
     <div className="mt-10 flex flex-col gap-4">
-      <div className="flex justify-between">
+      <div className="flex flex-col  sm:flex-row sm:justify-between sm:items-center gap-4 sm:gap-0">
         <Input
           placeholder="Search by subject or email"
-          className="w-[350px] mr-4"
+          className="w-full sm:w-[350px] sm:mr-4"
           defaultValue={search ?? ""}
           onChange={(e) => debouncedSearch(e.target.value)}
         />
-        <div className="flex justify-center items-center gap-x-3">
+        <div className="flex flex-col sm:flex-row justify-center items-center gap-3">
           <Select
             value={apiKey ?? "All API Keys"}
             onValueChange={(val) => handleApiKey(val)}
           >
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-full sm:w-[180px]">
               {apiKey
                 ? apiKeysQuery?.find((apikey) => apikey.id === Number(apiKey))
                     ?.name
@@ -133,7 +196,7 @@ export default function EmailsList() {
             value={domain ?? "All Domains"}
             onValueChange={(val) => handleDomain(val)}
           >
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-full sm:w-[180px]">
               {domain
                 ? domainsQuery?.find((d) => d.id === Number(domain))?.name
                 : "All Domains"}
@@ -156,7 +219,7 @@ export default function EmailsList() {
               setStatus(val === "All statuses" ? null : val)
             }
           >
-            <SelectTrigger className="w-[180px] capitalize">
+            <SelectTrigger className="w-full sm:w-[180px] capitalize">
               {status ? status.toLowerCase().replace("_", " ") : "All statuses"}
             </SelectTrigger>
             <SelectContent>
@@ -173,6 +236,7 @@ export default function EmailsList() {
                 "OPENED",
                 "DELIVERY_DELAYED",
                 "COMPLAINED",
+                "SUPPRESSED",
               ]).map((status) => (
                 <SelectItem key={status} value={status} className=" capitalize">
                   {status.toLowerCase().replace("_", " ")}
@@ -180,6 +244,15 @@ export default function EmailsList() {
               ))}
             </SelectContent>
           </Select>
+          <Button
+            variant="outline"
+            onClick={handleExport}
+            disabled={exportQuery.isFetching}
+            className="w-full sm:w-auto"
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Export
+          </Button>
         </div>
       </div>
       <div className="flex flex-col rounded-xl border shadow">
@@ -230,7 +303,7 @@ export default function EmailsList() {
                             Scheduled at{" "}
                             {formatDate(
                               email.scheduledAt,
-                              "MMM dd'th', hh:mm a"
+                              "MMM dd'th', hh:mm a",
                             )}
                           </TooltipContent>
                         </Tooltip>
@@ -246,7 +319,7 @@ export default function EmailsList() {
                     {email.latestStatus !== "SCHEDULED"
                       ? formatDate(
                           email.scheduledAt ?? email.createdAt,
-                          "MMM do, hh:mm a"
+                          "MMM do, hh:mm a",
                         )
                       : "--"}
                   </TableCell>
@@ -266,7 +339,7 @@ export default function EmailsList() {
           open={!!selectedEmail}
           onOpenChange={handleSheetChange}
         >
-          <DynamicSheetContentWithNoSSR className=" sm:max-w-3xl">
+          <DynamicSheetContentWithNoSSR className="sm:max-w-3xl overflow-y-auto no-scrollbar">
             <SheetTitle className="sr-only">Email Details</SheetTitle>
             <SheetDescription className="sr-only">
               Detailed view of the selected email.
@@ -300,39 +373,39 @@ const EmailIcon: React.FC<{ status: EmailStatus }> = ({ status }) => {
     case "SENT":
       return (
         // <div className="border border-gray-400/60 p-2 rounded-lg bg-gray-400/10">
-        <Mail className="w-6 h-6 text-gray-500 " />
+        <Mail className="w-6 h-6 text-gray" />
         // </div>
       );
     case "DELIVERED":
       return (
         // <div className="border border-emerald-600/60 p-2 rounded-lg bg-emerald-500/10">
-        <MailCheck className="w-6 h-6 text-emerald-800" />
+        <MailCheck className="w-6 h-6 text-green" />
         // </div>
       );
     case "BOUNCED":
     case "FAILED":
       return (
         // <div className="border border-red-600/60 p-2 rounded-lg bg-red-500/10">
-        <MailX className="w-6 h-6 text-red-900" />
+        <MailX className="w-6 h-6 text-red" />
         // </div>
       );
     case "CLICKED":
       return (
         // <div className="border border-cyan-600/60 p-2 rounded-lg bg-cyan-500/10">
-        <MailSearch className="w-6 h-6 text-cyan-700" />
+        <MailSearch className="w-6 h-6 text-blue" />
         // </div>
       );
     case "OPENED":
       return (
         // <div className="border border-indigo-600/60 p-2 rounded-lg bg-indigo-500/10">
-        <MailOpen className="w-6 h-6 text-indigo-700" />
+        <MailOpen className="w-6 h-6 text-purple" />
         // </div>
       );
     case "DELIVERY_DELAYED":
     case "COMPLAINED":
       return (
         // <div className="border border-yellow-600/60 p-2 rounded-lg bg-yellow-500/10">
-        <MailWarning className="w-6 h-6 text-yellow-700" />
+        <MailWarning className="w-6 h-6 text-yellow" />
         // </div>
       );
     default:

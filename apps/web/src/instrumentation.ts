@@ -1,5 +1,5 @@
 import { env } from "./env";
-import { isCloud } from "./utils/common";
+import { isCloud , isEmailCleanupEnabled } from "./utils/common";
 
 let initialized = false;
 
@@ -24,6 +24,15 @@ export async function register() {
     if (isCloud()) {
       await import("~/server/jobs/usage-job");
     }
+
+    if (isEmailCleanupEnabled()) {
+      await import("~/server/jobs/cleanup-email-bodies");
+    }
+
+    const { CampaignSchedulerService } = await import(
+      "~/server/jobs/campaign-scheduler-job"
+    );
+    await CampaignSchedulerService.start();
 
     initialized = true;
   }

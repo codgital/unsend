@@ -1,6 +1,6 @@
 import { CampaignStatus, Prisma } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
-import { EmailRenderer } from "@unsend/email-editor/src/renderer";
+import { EmailRenderer } from "@usesend/email-editor/src/renderer";
 import { z } from "zod";
 import { env } from "~/env";
 import {
@@ -9,15 +9,13 @@ import {
   campaignProcedure,
   publicProcedure,
 } from "~/server/api/trpc";
+import { logger } from "~/server/logger/log";
 import { nanoid } from "~/server/nanoid";
-import {
-  sendCampaign,
-  subscribeContact,
-} from "~/server/service/campaign-service";
+import * as campaignService from "~/server/service/campaign-service";
 import { validateDomainFromEmail } from "~/server/service/domain-service";
 import {
   getDocumentUploadUrl,
-  isStorageConfigured
+  isStorageConfigured,
 } from "~/server/service/storage-service";
 
 const statuses = Object.values(CampaignStatus) as [CampaignStatus];
@@ -28,7 +26,8 @@ export const campaignRouter = createTRPCRouter({
       z.object({
         page: z.number().optional(),
         status: z.enum(statuses).optional().nullable(),
-      })
+        search: z.string().optional().nullable(),
+      }),
     )
     .query(async ({ ctx: { db, team }, input }) => {
       const page = input.page || 1;
@@ -43,6 +42,23 @@ export const campaignRouter = createTRPCRouter({
         whereConditions.status = input.status;
       }
 
+      if (input.search) {
+        whereConditions.OR = [
+          {
+            name: {
+              contains: input.search,
+              mode: "insensitive",
+            },
+          },
+          {
+            subject: {
+              contains: input.search,
+              mode: "insensitive",
+            },
+          },
+        ];
+      }
+
       const countP = db.campaign.count({ where: whereConditions });
 
       const campaignsP = db.campaign.findMany({
@@ -55,7 +71,11 @@ export const campaignRouter = createTRPCRouter({
           createdAt: true,
           updatedAt: true,
           status: true,
-          html: true,
+          scheduledAt: true,
+          total: true,
+          sent: true,
+          delivered: true,
+          unsubscribed: true,
         },
         orderBy: {
           createdAt: "desc",
@@ -75,7 +95,7 @@ export const campaignRouter = createTRPCRouter({
         name: z.string(),
         from: z.string(),
         subject: z.string(),
-      })
+      }),
     )
     .mutation(async ({ ctx: { db, team }, input }) => {
       const domain = await validateDomainFromEmail(input.from, team.id);
@@ -99,12 +119,13 @@ export const campaignRouter = createTRPCRouter({
         subject: z.string().optional(),
         previewText: z.string().optional(),
         content: z.string().optional(),
+        html: z.string().optional(),
         contactBookId: z.string().optional(),
         replyTo: z.string().array().optional(),
-      })
+      }),
     )
     .mutation(async ({ ctx: { db, team, campaign: campaignOld }, input }) => {
-      const { campaignId, ...data } = input;
+      const { html: htmlInput, campaignId, ...data } = input;
       if (data.contactBookId) {
         const contactBook = await db.contactBook.findUnique({
           where: { id: data.contactBookId },
@@ -123,34 +144,36 @@ export const campaignRouter = createTRPCRouter({
         domainId = domain.id;
       }
 
-      let html: string | null = null;
+      let htmlToSave: string | undefined;
 
       if (data.content) {
         const jsonContent = data.content ? JSON.parse(data.content) : null;
 
         const renderer = new EmailRenderer(jsonContent);
-        html = await renderer.render();
+        htmlToSave = await renderer.render();
+      } else if (typeof htmlInput === "string") {
+        htmlToSave = htmlInput;
+      }
+
+      const campaignUpdateData: Prisma.CampaignUpdateInput = {
+        ...data,
+        domainId,
+      };
+
+      if (htmlToSave !== undefined) {
+        campaignUpdateData.html = htmlToSave;
       }
 
       const campaign = await db.campaign.update({
         where: { id: campaignId },
-        data: {
-          ...data,
-          html,
-          domainId,
-        },
+        data: campaignUpdateData,
       });
       return campaign;
     }),
 
-  deleteCampaign: campaignProcedure.mutation(
-    async ({ ctx: { db, team }, input }) => {
-      const campaign = await db.campaign.delete({
-        where: { id: input.campaignId, teamId: team.id },
-      });
-      return campaign;
-    }
-  ),
+  deleteCampaign: campaignProcedure.mutation(async ({ input }) => {
+    return await campaignService.deleteCampaign(input.campaignId);
+  }),
 
   getCampaign: campaignProcedure.query(async ({ ctx: { db, team }, input }) => {
     const campaign = await db.campaign.findUnique({
@@ -179,10 +202,28 @@ export const campaignRouter = createTRPCRouter({
     };
   }),
 
-  sendCampaign: campaignProcedure.mutation(
-    async ({ ctx: { db, team }, input }) => {
-      await sendCampaign(input.campaignId);
-    }
+  latestEmails: campaignProcedure.query(
+    async ({ ctx: { db, team, campaign } }) => {
+      const emails = await db.email.findMany({
+        where: {
+          teamId: team.id,
+          campaignId: campaign.id,
+        },
+        orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+        take: 10,
+        select: {
+          id: true,
+          subject: true,
+          to: true,
+          latestStatus: true,
+          createdAt: true,
+          updatedAt: true,
+          scheduledAt: true,
+        },
+      });
+
+      return emails;
+    },
   ),
 
   reSubscribeContact: publicProcedure
@@ -190,20 +231,21 @@ export const campaignRouter = createTRPCRouter({
       z.object({
         id: z.string(),
         hash: z.string(),
-      })
+      }),
     )
-    .mutation(async ({ ctx: { db }, input }) => {
-      await subscribeContact(input.id, input.hash);
+    .mutation(async ({ input }) => {
+      await campaignService.subscribeContact(input.id, input.hash);
     }),
 
   duplicateCampaign: campaignProcedure.mutation(
-    async ({ ctx: { db, team, campaign }, input }) => {
+    async ({ ctx: { db, team, campaign } }) => {
       const newCampaign = await db.campaign.create({
         data: {
           name: `${campaign.name} (Copy)`,
           from: campaign.from,
           subject: campaign.subject,
           content: campaign.content,
+          html: campaign.html,
           teamId: team.id,
           domainId: campaign.domainId,
           contactBookId: campaign.contactBookId,
@@ -211,15 +253,49 @@ export const campaignRouter = createTRPCRouter({
       });
 
       return newCampaign;
-    }
+    },
   ),
+
+  scheduleCampaign: campaignProcedure
+    .input(
+      z.object({
+        campaignId: z.string(),
+        scheduledAt: z.union([z.string().datetime(), z.date()]).optional(),
+        batchSize: z.number().min(1).max(100_000).optional(),
+      }),
+    )
+    .mutation(async ({ ctx: { team }, input }) => {
+      await campaignService.scheduleCampaign({
+        campaignId: input.campaignId,
+        teamId: team.id,
+        scheduledAt: input.scheduledAt,
+        batchSize: input.batchSize,
+      });
+      return { ok: true };
+    }),
+
+  pauseCampaign: campaignProcedure.mutation(async ({ ctx: { campaign } }) => {
+    await campaignService.pauseCampaign({
+      campaignId: campaign.id,
+      teamId: campaign.teamId,
+    });
+    return { ok: true };
+  }),
+
+  resumeCampaign: campaignProcedure.mutation(async ({ ctx: { campaign } }) => {
+    await campaignService.resumeCampaign({
+      campaignId: campaign.id,
+      teamId: campaign.teamId,
+    });
+    return { ok: true };
+  }),
 
   generateImagePresignedUrl: campaignProcedure
     .input(
       z.object({
         name: z.string(),
         type: z.string(),
-      })
+      }),
     )
     .mutation(async ({ ctx: { team }, input }) => {
       const extension = input.name.split(".").pop();
@@ -227,7 +303,7 @@ export const campaignRouter = createTRPCRouter({
 
       const url = await getDocumentUploadUrl(
         `${team.id}/${randomName}`,
-        input.type
+        input.type,
       );
 
       const imageUrl = `${env.S3_COMPATIBLE_PUBLIC_URL}/${team.id}/${randomName}`;

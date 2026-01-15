@@ -1,7 +1,7 @@
 "use client";
 
 import { api } from "~/trpc/react";
-import { Domain, DomainStatus } from "@prisma/client";
+import { DomainStatus } from "@prisma/client";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -9,7 +9,7 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from "@unsend/ui/src/breadcrumb";
+} from "@usesend/ui/src/breadcrumb";
 import { DomainStatusBadge } from "../domain-badge";
 import {
   Table,
@@ -18,15 +18,20 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@unsend/ui/src/table";
-import { TextWithCopyButton } from "@unsend/ui/src/text-with-copy";
+} from "@usesend/ui/src/table";
+import { TextWithCopyButton } from "@usesend/ui/src/text-with-copy";
 import React, { use } from "react";
-import { Switch } from "@unsend/ui/src/switch";
+import { Switch } from "@usesend/ui/src/switch";
 import DeleteDomain from "./delete-domain";
 import SendTestMail from "./send-test-mail";
-import { Button } from "@unsend/ui/src/button";
+import { Button } from "@usesend/ui/src/button";
 import Link from "next/link";
-import { toast } from "@unsend/ui/src/toaster";
+import { toast } from "@usesend/ui/src/toaster";
+import type { inferRouterOutputs } from "@trpc/server";
+import type { AppRouter } from "~/server/api/root";
+
+type RouterOutputs = inferRouterOutputs<AppRouter>;
+type DomainResponse = NonNullable<RouterOutputs["domain"]["getDomain"]>;
 
 export default function DomainItemPage({
   params,
@@ -42,7 +47,7 @@ export default function DomainItemPage({
     {
       refetchInterval: (q) => (q?.state.data?.isVerifying ? 10000 : false),
       refetchIntervalInBackground: true,
-    }
+    },
   );
 
   const verifyQuery = api.domain.startVerification.useMutation();
@@ -54,7 +59,7 @@ export default function DomainItemPage({
         onSettled: () => {
           domainQuery.refetch();
         },
-      }
+      },
     );
   };
 
@@ -67,7 +72,7 @@ export default function DomainItemPage({
           <div className="flex justify-between items-center">
             <div className="flex items-center  gap-4">
               {/* <div className="flex items-center gap-4">
-              <h1 className="font-medium text-2xl">{domainQuery.data?.name}</h1>
+              <H1>{domainQuery.data?.name}</H1>
             </div> */}
               <Breadcrumb>
                 <BreadcrumbList>
@@ -123,100 +128,39 @@ export default function DomainItemPage({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                <TableRow>
-                  <TableCell className="">MX</TableCell>
-                  <TableCell>
-                    <TextWithCopyButton
-                      value={`mail.${domainQuery.data?.subdomain || domainQuery.data?.name}`}
-                    />
-                  </TableCell>
-                  <TableCell className="">
-                    <TextWithCopyButton
-                      value={`feedback-smtp.${domainQuery.data?.region}.amazonses.com`}
-                      className="w-[200px] overflow-hidden text-ellipsis text-nowrap"
-                    />
-                    {/* <div className="w-[200px] overflow-hidden text-ellipsis text-nowrap">
-                      {`feedback-smtp.${domainQuery.data?.region}.amazonses.com`}
-                    </div> */}
-                  </TableCell>
-                  <TableCell className="">Auto</TableCell>
-                  <TableCell className="">10</TableCell>
-                  <TableCell className="">
-                    <DnsVerificationStatus
-                      status={domainQuery.data?.spfDetails ?? "NOT_STARTED"}
-                    />
-                  </TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell className="">TXT</TableCell>
-                  <TableCell>
-                    <TextWithCopyButton
-                      value={`unsend._domainkey.${domainQuery.data?.subdomain || domainQuery.data?.name}`}
-                    />
-                  </TableCell>
-                  <TableCell className="">
-                    <TextWithCopyButton
-                      value={`p=${domainQuery.data?.publicKey}`}
-                      className="w-[200px] overflow-hidden text-ellipsis"
-                    />
-                  </TableCell>
-                  <TableCell className="">Auto</TableCell>
-                  <TableCell className=""></TableCell>
-                  <TableCell className="">
-                    <DnsVerificationStatus
-                      status={domainQuery.data?.dkimStatus ?? "NOT_STARTED"}
-                    />
-                  </TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell className="">TXT</TableCell>
-                  <TableCell>
-                    <TextWithCopyButton
-                      value={`mail.${domainQuery.data?.subdomain || domainQuery.data?.name}`}
-                    />
-                  </TableCell>
-                  <TableCell className="">
-                    <TextWithCopyButton
-                      value={`v=spf1 include:amazonses.com ~all`}
-                      className="w-[200px] overflow-hidden text-ellipsis text-nowrap"
-                    />
-                  </TableCell>
-                  <TableCell className="">Auto</TableCell>
-                  <TableCell className=""></TableCell>
-                  <TableCell className="">
-                    <DnsVerificationStatus
-                      status={domainQuery.data?.spfDetails ?? "NOT_STARTED"}
-                    />
-                  </TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell className="">TXT</TableCell>
-                  <TableCell>
-                    <div className="flex gap-2 items-center">
-                      <span className="text-sm text-muted-foreground">
-                        (optional)
-                      </span>
-                      <TextWithCopyButton
-                        value={`_dmarc.${domainQuery.data?.subdomain || domainQuery.data?.name}`}
-                      />
-                    </div>
-                  </TableCell>
-                  <TableCell className="">
-                    <TextWithCopyButton
-                      value={`v=DMARC1; p=none;`}
-                      className="w-[200px] overflow-hidden text-ellipsis text-nowrap"
-                    />
-                  </TableCell>
-                  <TableCell className="">Auto</TableCell>
-                  <TableCell className=""></TableCell>
-                  <TableCell className="">
-                    <DnsVerificationStatus
-                      status={
-                        domainQuery.data?.dmarcAdded ? "SUCCESS" : "NOT_STARTED"
-                      }
-                    />
-                  </TableCell>
-                </TableRow>
+                {(domainQuery.data?.dnsRecords ?? []).map((record) => {
+                  const key = `${record.type}-${record.name}`;
+                  const valueClassName = record.name.includes("_domainkey")
+                    ? "w-[200px] overflow-hidden text-ellipsis"
+                    : "w-[200px] overflow-hidden text-ellipsis text-nowrap";
+
+                  return (
+                    <TableRow key={key}>
+                      <TableCell className="">{record.type}</TableCell>
+                      <TableCell>
+                        <div className="flex gap-2 items-center">
+                          {record.recommended ? (
+                            <span className="text-sm text-muted-foreground">
+                              (recommended)
+                            </span>
+                          ) : null}
+                          <TextWithCopyButton value={record.name} />
+                        </div>
+                      </TableCell>
+                      <TableCell className="">
+                        <TextWithCopyButton
+                          value={record.value}
+                          className={valueClassName}
+                        />
+                      </TableCell>
+                      <TableCell className="">{record.ttl}</TableCell>
+                      <TableCell className="">{record.priority ?? ""}</TableCell>
+                      <TableCell className="">
+                        <DnsVerificationStatus status={record.status} />
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
@@ -229,12 +173,12 @@ export default function DomainItemPage({
   );
 }
 
-const DomainSettings: React.FC<{ domain: Domain }> = ({ domain }) => {
+const DomainSettings: React.FC<{ domain: DomainResponse }> = ({ domain }) => {
   const updateDomain = api.domain.updateDomain.useMutation();
   const utils = api.useUtils();
 
   const [clickTracking, setClickTracking] = React.useState(
-    domain.clickTracking
+    domain.clickTracking,
   );
   const [openTracking, setOpenTracking] = React.useState(domain.openTracking);
 
@@ -247,7 +191,7 @@ const DomainSettings: React.FC<{ domain: Domain }> = ({ domain }) => {
           utils.domain.invalidate();
           toast.success("Click tracking updated");
         },
-      }
+      },
     );
   }
 
@@ -260,7 +204,7 @@ const DomainSettings: React.FC<{ domain: Domain }> = ({ domain }) => {
           utils.domain.invalidate();
           toast.success("Open tracking updated");
         },
-      }
+      },
     );
   }
   return (
@@ -304,25 +248,21 @@ const DomainSettings: React.FC<{ domain: Domain }> = ({ domain }) => {
   );
 };
 
-const DnsVerificationStatus: React.FC<{ status: string }> = ({ status }) => {
-  let badgeColor = "bg-gray-400/10 text-gray-500 border-gray-400/10"; // Default color
+const DnsVerificationStatus: React.FC<{ status: DomainStatus }> = ({ status }) => {
+  let badgeColor = "bg-gray/10 text-gray border-gray/10"; // Default color
   switch (status) {
     case DomainStatus.SUCCESS:
-      badgeColor =
-        "bg-green-500/15 dark:bg-green-600/10 text-green-700 dark:text-green-600/90 border  border-green-500/25 dark:border-green-700/25";
+      badgeColor = "bg-green/15 text-green border border-green/25";
       break;
     case DomainStatus.FAILED:
-      badgeColor =
-        "bg-red-500/10 text-red-600 dark:text-red-700/90 border border-red-600/10";
+      badgeColor = "bg-red/10 text-red border border-red/10";
       break;
     case DomainStatus.TEMPORARY_FAILURE:
     case DomainStatus.PENDING:
-      badgeColor =
-        "bg-yellow-500/20 dark:bg-yellow-500/10 text-yellow-600 border border-yellow-600/10";
+      badgeColor = "bg-yellow/20 text-yellow border border-yellow/10";
       break;
     default:
-      badgeColor =
-        "bg-gray-200/70 dark:bg-gray-400/10 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-400/20";
+      badgeColor = "bg-gray/10 text-gray border border-gray/20";
   }
 
   return (

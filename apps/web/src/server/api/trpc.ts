@@ -15,6 +15,8 @@ import { env } from "~/env";
 
 import { getServerAuthSession } from "~/server/auth";
 import { db } from "~/server/db";
+import { getChildLogger, logger, withLogger } from "../logger/log";
+import { randomUUID } from "crypto";
 
 /**
  * 1. CONTEXT
@@ -29,13 +31,13 @@ import { db } from "~/server/db";
  * @see https://trpc.io/docs/server/context
  */
 export const createTRPCContext = async (opts: { headers: Headers }) => {
-  const session = await getServerAuthSession();
+    const session = await getServerAuthSession();
 
-  return {
-    db,
-    session,
-    ...opts,
-  };
+    return {
+        db,
+        session,
+        ...opts,
+    };
 };
 
 /**
@@ -46,17 +48,17 @@ export const createTRPCContext = async (opts: { headers: Headers }) => {
  * errors on the backend.
  */
 const t = initTRPC.context<typeof createTRPCContext>().create({
-  transformer: superjson,
-  errorFormatter({ shape, error }) {
-    return {
-      ...shape,
-      data: {
-        ...shape.data,
-        zodError:
-          error.cause instanceof ZodError ? error.cause.flatten() : null,
-      },
-    };
-  },
+    transformer: superjson,
+    errorFormatter({ shape, error }) {
+        return {
+            ...shape,
+            data: {
+                ...shape.data,
+                zodError:
+                    error.cause instanceof ZodError ? error.cause.flatten() : null,
+            },
+        };
+    },
 });
 
 /**
@@ -90,6 +92,24 @@ export const createTRPCRouter = t.router;
 export const publicProcedure = t.procedure;
 
 /**
+ * Authenticated (session-required) procedure
+ *
+ * Ensures a session exists but does not enforce waitlist status. Useful for flows where waitlisted
+ * users should still have access (e.g., waitlist management).
+ */
+export const authedProcedure = t.procedure.use(({ ctx, next }) => {
+    if (!ctx.session || !ctx.session.user) {
+        throw new TRPCError({ code: "UNAUTHORIZED" });
+    }
+
+    return next({
+        ctx: {
+            session: { ...ctx.session, user: ctx.session.user },
+        },
+    });
+});
+
+/**
  * Protected (authenticated) procedure
  *
  * If you want a query or mutation to ONLY be accessible to logged in users, use this. It verifies
@@ -97,160 +117,163 @@ export const publicProcedure = t.procedure;
  *
  * @see https://trpc.io/docs/procedures
  */
-export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
-  if (!ctx.session || !ctx.session.user || !ctx.session.user.isBetaUser) {
-    throw new TRPCError({ code: "UNAUTHORIZED" });
-  }
+export const protectedProcedure = authedProcedure.use(({ ctx, next }) => {
+    if (ctx.session.user.isWaitlisted) {
+        throw new TRPCError({ code: "UNAUTHORIZED" });
+    }
 
-  return next({
-    ctx: {
-      // infers the `session` as non-nullable
-      session: { ...ctx.session, user: ctx.session.user },
-    },
-  });
+    return next();
 });
 
 export const teamProcedure = protectedProcedure.use(async ({ ctx, next }) => {
-  const cookieStore = await cookies();
+    const cookieStore = await cookies();
 
-  const currentTeamId = cookieStore.get("unsendTeamId")?.value
-    ? parseInt(cookieStore.get("unsendTeamId")!.value, 10)
-    : null;
+    const currentTeamId = cookieStore.get("unsendTeamId")?.value
+        ? parseInt(cookieStore.get("unsendTeamId")!.value, 10)
+        : null;
 
-  const teamUser = await db.teamUser.findFirst({
-    where: { userId: ctx.session.user.id, ...(currentTeamId && { teamId: currentTeamId }) },
-    include: { team: true },
-  });
+    const teamUser = await db.teamUser.findFirst({
+        where: { userId: ctx.session.user.id, ...(currentTeamId && { teamId: currentTeamId }) },
+        include: { team: true },
+    });
 
-  if (!teamUser) {
-    throw new TRPCError({ code: "NOT_FOUND", message: "Team not found" });
-  }
+    if (!teamUser) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Team not found" });
+    }
 
-  return next({
-    ctx: {
-      team: teamUser.team,
-      teamUser,
-      session: { ...ctx.session, user: ctx.session.user },
-    },
-  });
+    return withLogger(
+        getChildLogger({
+            teamId: teamUser.team.id,
+            requestId: randomUUID(),
+        }),
+        async () => {
+            return next({
+                ctx: {
+                    team: teamUser.team,
+                    teamUser,
+                    session: { ...ctx.session, user: ctx.session.user },
+                },
+            });
+        }
+    );
 });
 
 export const teamAdminProcedure = teamProcedure.use(async ({ ctx, next }) => {
-  if (ctx.teamUser.role !== "ADMIN") {
-    throw new TRPCError({
-      code: "UNAUTHORIZED",
-      message: "You are not authorized to perform this action",
-    });
-  }
+    if (ctx.teamUser.role !== "ADMIN") {
+        throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "You are not authorized to perform this action",
+        });
+    }
 
-  return next();
+    return next();
 });
 
 export const domainProcedure = teamProcedure
-  .input(z.object({ id: z.number() }))
-  .use(async ({ ctx, next, input }) => {
-    const domain = await db.domain.findUnique({
-      where: { id: input.id, teamId: ctx.team.id },
-    });
-    if (!domain) {
-      throw new TRPCError({ code: "NOT_FOUND", message: "Domain not found" });
-    }
+    .input(z.object({ id: z.number() }))
+    .use(async ({ ctx, next, input }) => {
+        const domain = await db.domain.findUnique({
+            where: { id: input.id, teamId: ctx.team.id },
+        });
+        if (!domain) {
+            throw new TRPCError({ code: "NOT_FOUND", message: "Domain not found" });
+        }
 
-    return next({ ctx: { ...ctx, domain } });
-  });
+        return next({ ctx: { ...ctx, domain } });
+    });
 
 export const emailProcedure = teamProcedure
-  .input(z.object({ id: z.string() }))
-  .use(async ({ ctx, next, input }) => {
-    const email = await db.email.findUnique({
-      where: { id: input.id, teamId: ctx.team.id },
-    });
-    if (!email) {
-      throw new TRPCError({ code: "NOT_FOUND", message: "Email not found" });
-    }
+    .input(z.object({ id: z.string() }))
+    .use(async ({ ctx, next, input }) => {
+        const email = await db.email.findUnique({
+            where: { id: input.id, teamId: ctx.team.id },
+        });
+        if (!email) {
+            throw new TRPCError({ code: "NOT_FOUND", message: "Email not found" });
+        }
 
-    return next({ ctx: { ...ctx, email } });
-  });
+        return next({ ctx: { ...ctx, email } });
+    });
 
 export const apiKeyProcedure = teamProcedure
-  .input(z.object({ id: z.number() }))
-  .use(async ({ ctx, next, input }) => {
-    const apiKey = await db.apiKey.findUnique({
-      where: { id: input.id, teamId: ctx.team.id },
-    });
-    if (!apiKey) {
-      throw new TRPCError({ code: "NOT_FOUND", message: "API key not found" });
-    }
+    .input(z.object({ id: z.number() }))
+    .use(async ({ ctx, next, input }) => {
+        const apiKey = await db.apiKey.findUnique({
+            where: { id: input.id, teamId: ctx.team.id },
+        });
+        if (!apiKey) {
+            throw new TRPCError({ code: "NOT_FOUND", message: "API key not found" });
+        }
 
-    return next({ ctx: { ...ctx, apiKey } });
-  });
+        return next({ ctx: { ...ctx, apiKey } });
+    });
 
 export const contactBookProcedure = teamProcedure
-  .input(
-    z.object({
-      contactBookId: z.string(),
-    })
-  )
-  .use(async ({ ctx, next, input }) => {
-    const contactBook = await db.contactBook.findUnique({
-      where: { id: input.contactBookId, teamId: ctx.team.id },
-    });
-    if (!contactBook) {
-      throw new TRPCError({
-        code: "NOT_FOUND",
-        message: "Contact book not found",
-      });
-    }
+    .input(
+        z.object({
+            contactBookId: z.string(),
+        })
+    )
+    .use(async ({ ctx, next, input }) => {
+        const contactBook = await db.contactBook.findUnique({
+            where: { id: input.contactBookId, teamId: ctx.team.id },
+        });
+        if (!contactBook) {
+            throw new TRPCError({
+                code: "NOT_FOUND",
+                message: "Contact book not found",
+            });
+        }
 
-    return next({ ctx: { ...ctx, contactBook } });
-  });
+        return next({ ctx: { ...ctx, contactBook } });
+    });
 
 export const campaignProcedure = teamProcedure
-  .input(
-    z.object({
-      campaignId: z.string(),
-    })
-  )
-  .use(async ({ ctx, next, input }) => {
-    const campaign = await db.campaign.findUnique({
-      where: { id: input.campaignId, teamId: ctx.team.id },
-    });
-    if (!campaign) {
-      throw new TRPCError({
-        code: "NOT_FOUND",
-        message: "Campaign not found",
-      });
-    }
+    .input(
+        z.object({
+            campaignId: z.string(),
+        })
+    )
+    .use(async ({ ctx, next, input }) => {
+        const campaign = await db.campaign.findUnique({
+            where: { id: input.campaignId, teamId: ctx.team.id },
+        });
+        if (!campaign) {
+            throw new TRPCError({
+                code: "NOT_FOUND",
+                message: "Campaign not found",
+            });
+        }
 
-    return next({ ctx: { ...ctx, campaign } });
-  });
+        return next({ ctx: { ...ctx, campaign } });
+    });
 
 export const templateProcedure = teamProcedure
-  .input(
-    z.object({
-      templateId: z.string(),
-    })
-  )
-  .use(async ({ ctx, next, input }) => {
-    const template = await db.template.findUnique({
-      where: { id: input.templateId, teamId: ctx.team.id },
-    });
-    if (!template) {
-      throw new TRPCError({
-        code: "NOT_FOUND",
-        message: "Template not found",
-      });
-    }
+    .input(
+        z.object({
+            templateId: z.string(),
+        })
+    )
+    .use(async ({ ctx, next, input }) => {
+        const template = await db.template.findUnique({
+            where: { id: input.templateId, teamId: ctx.team.id },
+        });
+        if (!template) {
+            throw new TRPCError({
+                code: "NOT_FOUND",
+                message: "Template not found",
+            });
+        }
 
-    return next({ ctx: { ...ctx, template } });
-  });
+        return next({ ctx: { ...ctx, template } });
+    });
 
 /**
  * To manage application settings, for hosted version, authenticated users will be considered as admin
  */
 export const adminProcedure = protectedProcedure.use(async ({ ctx, next }) => {
-  if (env.NEXT_PUBLIC_IS_CLOUD && ctx.session.user.email !== env.ADMIN_EMAIL) {
-    throw new TRPCError({ code: "UNAUTHORIZED" });
-  }
-  return next();
+    if (env.NEXT_PUBLIC_IS_CLOUD && ctx.session.user.email !== env.ADMIN_EMAIL) {
+        throw new TRPCError({ code: "UNAUTHORIZED" });
+    }
+    return next();
 });

@@ -1,10 +1,10 @@
 "use client";
 
 import { api } from "~/trpc/react";
-import { Spinner } from "@unsend/ui/src/spinner";
-import { Button } from "@unsend/ui/src/button";
-import { Input } from "@unsend/ui/src/input";
-import { Editor } from "@unsend/email-editor";
+import { Spinner } from "@usesend/ui/src/spinner";
+import { Button } from "@usesend/ui/src/button";
+import { Input } from "@usesend/ui/src/input";
+import { Editor } from "@usesend/email-editor";
 import { use, useState } from "react";
 import { Campaign } from "@prisma/client";
 import {
@@ -12,7 +12,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-} from "@unsend/ui/src/select";
+} from "@usesend/ui/src/select";
 import {
   Dialog,
   DialogContent,
@@ -20,7 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@unsend/ui/src/dialog";
+} from "@usesend/ui/src/dialog";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -31,8 +31,8 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@unsend/ui/src/form";
-import { toast } from "@unsend/ui/src/toaster";
+} from "@usesend/ui/src/form";
+import { toast } from "@usesend/ui/src/toaster";
 import { useDebouncedCallback } from "use-debounce";
 import { formatDistanceToNow } from "date-fns";
 import {
@@ -40,7 +40,9 @@ import {
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
-} from "@unsend/ui/src/accordion";
+} from "@usesend/ui/src/accordion";
+import ScheduleCampaign from "../../schedule-campaign";
+import { useRouter } from "next/navigation";
 
 const sendSchema = z.object({
   confirmation: z.string(),
@@ -94,6 +96,8 @@ function CampaignEditor({
 }: {
   campaign: Campaign & { imageUploadSupported: boolean };
 }) {
+  const router = useRouter();
+  const isApiCampaign = campaign.isApi;
   const contactBooksQuery = api.contacts.getContactBooks.useQuery({});
   const utils = api.useUtils();
 
@@ -111,7 +115,6 @@ function CampaignEditor({
   const [previewText, setPreviewText] = useState<string | null>(
     campaign.previewText
   );
-  const [openSendDialog, setOpenSendDialog] = useState(false);
 
   const updateCampaignMutation = api.campaign.updateCampaign.useMutation({
     onSuccess: () => {
@@ -119,14 +122,12 @@ function CampaignEditor({
       setIsSaving(false);
     },
   });
-  const sendCampaignMutation = api.campaign.sendCampaign.useMutation();
   const getUploadUrl = api.campaign.generateImagePresignedUrl.useMutation();
 
-  const sendForm = useForm<z.infer<typeof sendSchema>>({
-    resolver: zodResolver(sendSchema),
-  });
-
   function updateEditorContent() {
+    if (isApiCampaign) {
+      return;
+    }
     updateCampaignMutation.mutate({
       campaignId: campaign.id,
       content: JSON.stringify(json),
@@ -138,40 +139,12 @@ function CampaignEditor({
     1000
   );
 
-  async function onSendCampaign(values: z.infer<typeof sendSchema>) {
-    if (
-      values.confirmation?.toLocaleLowerCase() !== "Send".toLocaleLowerCase()
-    ) {
-      sendForm.setError("confirmation", {
-        message: "Please type 'Send' to confirm",
-      });
-      return;
-    }
-
-    sendCampaignMutation.mutate(
-      {
-        campaignId: campaign.id,
-      },
-      {
-        onSuccess: () => {
-          setOpenSendDialog(false);
-          toast.success(`Campaign sent successfully`);
-        },
-        onError: (error) => {
-          toast.error(`Failed to send campaign: ${error.message}`);
-        },
-      }
-    );
-  }
-
   const handleFileChange = async (file: File) => {
     if (file.size > IMAGE_SIZE_LIMIT) {
       throw new Error(
         `File should be less than ${IMAGE_SIZE_LIMIT / 1024 / 1024}MB`
       );
     }
-
-    console.log("file type: ", file.type);
 
     const { uploadUrl, imageUrl } = await getUploadUrl.mutateAsync({
       name: file.name,
@@ -191,8 +164,6 @@ function CampaignEditor({
     return imageUrl;
   };
 
-  const confirmation = sendForm.watch("confirmation");
-
   const contactBook = contactBooksQuery.data?.find(
     (book) => book.id === contactBookId
   );
@@ -206,7 +177,12 @@ function CampaignEditor({
             value={name}
             onChange={(e) => setName(e.target.value)}
             className=" border-0 focus:ring-0 focus:outline-none px-0.5 w-[300px]"
+            disabled={isApiCampaign}
+            readOnly={isApiCampaign}
             onBlur={() => {
+              if (isApiCampaign) {
+                return;
+              }
               if (name === campaign.name || !name) {
                 return;
               }
@@ -235,56 +211,13 @@ function CampaignEditor({
                 ? "just now"
                 : `${formatDistanceToNow(campaign.updatedAt)} ago`}
             </div>
-            <Dialog open={openSendDialog} onOpenChange={setOpenSendDialog}>
-              <DialogTrigger asChild>
-                <Button variant="default">Send Campaign</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Send Campaign</DialogTitle>
-                  <DialogDescription>
-                    Are you sure you want to send this campaign? This action
-                    cannot be undone.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="py-2">
-                  <Form {...sendForm}>
-                    <form
-                      onSubmit={sendForm.handleSubmit(onSendCampaign)}
-                      className="space-y-4"
-                    >
-                      <FormField
-                        control={sendForm.control}
-                        name="confirmation"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Type 'Send' to confirm</FormLabel>
-                            <FormControl>
-                              <Input {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <div className="flex justify-end">
-                        <Button
-                          type="submit"
-                          disabled={
-                            sendCampaignMutation.isPending ||
-                            confirmation?.toLocaleLowerCase() !==
-                              "Send".toLocaleLowerCase()
-                          }
-                        >
-                          {sendCampaignMutation.isPending
-                            ? "Sending..."
-                            : "Send"}
-                        </Button>
-                      </div>
-                    </form>
-                  </Form>
-                </div>
-              </DialogContent>
-            </Dialog>
+
+            <ScheduleCampaign
+              campaign={campaign}
+              onScheduled={() => {
+                router.push(`/campaigns/${campaign.id}`);
+              }}
+            />
           </div>
         </div>
 
@@ -302,6 +235,9 @@ function CampaignEditor({
                     setSubject(e.target.value);
                   }}
                   onBlur={() => {
+                    if (isApiCampaign) {
+                      return;
+                    }
                     if (subject === campaign.subject || !subject) {
                       return;
                     }
@@ -319,6 +255,8 @@ function CampaignEditor({
                     );
                   }}
                   className="mt-1 py-1 text-sm block w-full outline-none border-b border-transparent  focus:border-border bg-transparent"
+                  disabled={isApiCampaign}
+                  readOnly={isApiCampaign}
                 />
                 <AccordionTrigger className="py-0"></AccordionTrigger>
               </div>
@@ -337,6 +275,9 @@ function CampaignEditor({
                     className="mt-1 py-1 w-full text-sm outline-none border-b border-transparent  focus:border-border bg-transparent"
                     placeholder="Friendly name<hello@example.com>"
                     onBlur={() => {
+                      if (isApiCampaign) {
+                        return;
+                      }
                       if (from === campaign.from || !from) {
                         return;
                       }
@@ -353,6 +294,8 @@ function CampaignEditor({
                         }
                       );
                     }}
+                    disabled={isApiCampaign}
+                    readOnly={isApiCampaign}
                   />
                 </div>
                 <div className="flex items-center gap-4">
@@ -368,6 +311,9 @@ function CampaignEditor({
                     className="mt-1 py-1 text-sm block w-full outline-none border-b border-transparent bg-transparent focus:border-border"
                     placeholder="hello@example.com"
                     onBlur={() => {
+                      if (isApiCampaign) {
+                        return;
+                      }
                       if (replyTo === campaign.replyTo[0]) {
                         return;
                       }
@@ -384,6 +330,8 @@ function CampaignEditor({
                         }
                       );
                     }}
+                    disabled={isApiCampaign}
+                    readOnly={isApiCampaign}
                   />
                 </div>
 
@@ -398,6 +346,9 @@ function CampaignEditor({
                       setPreviewText(e.target.value);
                     }}
                     onBlur={() => {
+                      if (isApiCampaign) {
+                        return;
+                      }
                       if (
                         previewText === campaign.previewText ||
                         !previewText
@@ -418,6 +369,8 @@ function CampaignEditor({
                       );
                     }}
                     className="mt-1 py-1 text-sm block w-full outline-none border-b border-transparent bg-transparent  focus:border-border"
+                    disabled={isApiCampaign}
+                    readOnly={isApiCampaign}
                   />
                 </div>
                 <div className=" flex items-center gap-2">
@@ -429,7 +382,11 @@ function CampaignEditor({
                   ) : (
                     <Select
                       value={contactBookId ?? ""}
+                      disabled={isApiCampaign}
                       onValueChange={(val) => {
+                        if (isApiCampaign) {
+                          return;
+                        }
                         // Update the campaign's contactBookId
                         updateCampaignMutation.mutate(
                           {
@@ -469,22 +426,29 @@ function CampaignEditor({
           </AccordionItem>
         </Accordion>
 
-        <div className=" rounded-lg bg-gray-50 w-[700px] mx-auto p-10">
-          <div className="w-[600px] mx-auto">
-            <Editor
-              initialContent={json}
-              onUpdate={(content) => {
-                setJson(content.getJSON());
-                setIsSaving(true);
-                deboucedUpdateCampaign();
-              }}
-              variables={["email", "firstName", "lastName"]}
-              uploadImage={
-                campaign.imageUploadSupported ? handleFileChange : undefined
-              }
-            />
+        {isApiCampaign ? (
+          <p className="text-sm text-center text-muted-foreground">
+            Email created from API. Campaign content can only be updated via
+            API.
+          </p>
+        ) : (
+          <div className=" rounded-lg bg-gray-50 w-[700px] mx-auto p-10">
+            <div className="w-[600px] mx-auto">
+              <Editor
+                initialContent={json}
+                onUpdate={(content) => {
+                  setJson(content.getJSON());
+                  setIsSaving(true);
+                  deboucedUpdateCampaign();
+                }}
+                variables={["email", "firstName", "lastName"]}
+                uploadImage={
+                  campaign.imageUploadSupported ? handleFileChange : undefined
+                }
+              />
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

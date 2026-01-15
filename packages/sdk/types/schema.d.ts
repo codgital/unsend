@@ -20,7 +20,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Retrieve the user */
+                /** @description Retrieve domains accessible by the API key */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -61,6 +61,40 @@ export interface paths {
                             isVerifying: boolean;
                             errorMessage?: string | null;
                             subdomain?: string | null;
+                            verificationError?: string | null;
+                            lastCheckedTime?: string | null;
+                            dnsRecords: {
+                                /**
+                                 * @description DNS record type
+                                 * @example TXT
+                                 * @enum {string}
+                                 */
+                                type: "MX" | "TXT";
+                                /**
+                                 * @description DNS record name
+                                 * @example mail
+                                 */
+                                name: string;
+                                /**
+                                 * @description DNS record value
+                                 * @example v=spf1 include:amazonses.com ~all
+                                 */
+                                value: string;
+                                /**
+                                 * @description DNS record TTL
+                                 * @example Auto
+                                 */
+                                ttl: string;
+                                /**
+                                 * @description DNS record priority
+                                 * @example 10
+                                 */
+                                priority?: string | null;
+                                /** @enum {string} */
+                                status: "NOT_STARTED" | "PENDING" | "SUCCESS" | "FAILED" | "TEMPORARY_FAILURE";
+                                /** @description Whether the record is recommended */
+                                recommended?: boolean;
+                            }[];
                         }[];
                     };
                 };
@@ -124,6 +158,40 @@ export interface paths {
                             isVerifying: boolean;
                             errorMessage?: string | null;
                             subdomain?: string | null;
+                            verificationError?: string | null;
+                            lastCheckedTime?: string | null;
+                            dnsRecords: {
+                                /**
+                                 * @description DNS record type
+                                 * @example TXT
+                                 * @enum {string}
+                                 */
+                                type: "MX" | "TXT";
+                                /**
+                                 * @description DNS record name
+                                 * @example mail
+                                 */
+                                name: string;
+                                /**
+                                 * @description DNS record value
+                                 * @example v=spf1 include:amazonses.com ~all
+                                 */
+                                value: string;
+                                /**
+                                 * @description DNS record TTL
+                                 * @example Auto
+                                 */
+                                ttl: string;
+                                /**
+                                 * @description DNS record priority
+                                 * @example 10
+                                 */
+                                priority?: string | null;
+                                /** @enum {string} */
+                                status: "NOT_STARTED" | "PENDING" | "SUCCESS" | "FAILED" | "TEMPORARY_FAILURE";
+                                /** @description Whether the record is recommended */
+                                recommended?: boolean;
+                            }[];
                         };
                     };
                 };
@@ -154,7 +222,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Create a new domain */
+                /** @description Verify domain */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -165,10 +233,185 @@ export interface paths {
                         };
                     };
                 };
+                /** @description Forbidden - API key doesn't have access to this domain */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                        };
+                    };
+                };
+                /** @description Domain not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                        };
+                    };
+                };
             };
         };
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/domains/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number | null;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Retrieve the domain */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /**
+                             * @description The ID of the domain
+                             * @example 1
+                             */
+                            id: number;
+                            /**
+                             * @description The name of the domain
+                             * @example example.com
+                             */
+                            name: string;
+                            /**
+                             * @description The ID of the team
+                             * @example 1
+                             */
+                            teamId: number;
+                            /** @enum {string} */
+                            status: "NOT_STARTED" | "PENDING" | "SUCCESS" | "FAILED" | "TEMPORARY_FAILURE";
+                            /** @default us-east-1 */
+                            region: string;
+                            /** @default false */
+                            clickTracking: boolean;
+                            /** @default false */
+                            openTracking: boolean;
+                            publicKey: string;
+                            dkimStatus?: string | null;
+                            spfDetails?: string | null;
+                            createdAt: string;
+                            updatedAt: string;
+                            /** @default false */
+                            dmarcAdded: boolean;
+                            /** @default false */
+                            isVerifying: boolean;
+                            errorMessage?: string | null;
+                            subdomain?: string | null;
+                            verificationError?: string | null;
+                            lastCheckedTime?: string | null;
+                            dnsRecords: {
+                                /**
+                                 * @description DNS record type
+                                 * @example TXT
+                                 * @enum {string}
+                                 */
+                                type: "MX" | "TXT";
+                                /**
+                                 * @description DNS record name
+                                 * @example mail
+                                 */
+                                name: string;
+                                /**
+                                 * @description DNS record value
+                                 * @example v=spf1 include:amazonses.com ~all
+                                 */
+                                value: string;
+                                /**
+                                 * @description DNS record TTL
+                                 * @example Auto
+                                 */
+                                ttl: string;
+                                /**
+                                 * @description DNS record priority
+                                 * @example 10
+                                 */
+                                priority?: string | null;
+                                /** @enum {string} */
+                                status: "NOT_STARTED" | "PENDING" | "SUCCESS" | "FAILED" | "TEMPORARY_FAILURE";
+                                /** @description Whether the record is recommended */
+                                recommended?: boolean;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number | null;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Domain deleted successfully */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: number;
+                            success: boolean;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Forbidden - API key doesn't have access */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                        };
+                    };
+                };
+                /** @description Domain not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                        };
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -214,7 +457,7 @@ export interface paths {
                             emailEvents: {
                                 emailId: string;
                                 /** @enum {string} */
-                                status: "SCHEDULED" | "QUEUED" | "SENT" | "DELIVERY_DELAYED" | "BOUNCED" | "REJECTED" | "RENDERING_FAILURE" | "DELIVERED" | "OPENED" | "CLICKED" | "COMPLAINED" | "FAILED" | "CANCELLED";
+                                status: "SCHEDULED" | "QUEUED" | "SENT" | "DELIVERY_DELAYED" | "BOUNCED" | "REJECTED" | "RENDERING_FAILURE" | "DELIVERED" | "OPENED" | "CLICKED" | "COMPLAINED" | "FAILED" | "CANCELLED" | "SUPPRESSED";
                                 createdAt: string;
                                 data?: unknown;
                             }[];
@@ -268,7 +511,52 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        get: {
+            parameters: {
+                query?: {
+                    page?: string;
+                    limit?: string;
+                    startDate?: string;
+                    endDate?: string;
+                    domainId?: string | string[];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Retrieve a list of emails */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                id: string;
+                                to: string | string[];
+                                replyTo?: string | string[] | unknown;
+                                cc?: string | string[] | unknown;
+                                bcc?: string | string[] | unknown;
+                                from: string;
+                                subject: string;
+                                html: string | null;
+                                text: string | null;
+                                createdAt: string;
+                                updatedAt: string;
+                                /** @enum {string|null} */
+                                latestStatus: "SCHEDULED" | "QUEUED" | "SENT" | "DELIVERY_DELAYED" | "BOUNCED" | "REJECTED" | "RENDERING_FAILURE" | "DELIVERED" | "OPENED" | "CLICKED" | "COMPLAINED" | "FAILED" | "CANCELLED" | "SUPPRESSED" | null;
+                                /** Format: date-time */
+                                scheduledAt: string | null;
+                                domainId: number | null;
+                            }[];
+                            count: number;
+                        };
+                    };
+                };
+            };
+        };
         put?: never;
         post: {
             parameters: {
@@ -281,7 +569,6 @@ export interface paths {
                 content: {
                     "application/json": {
                         to: string | string[];
-                        /** Format: email */
                         from: string;
                         /** @description Optional when templateId is provided */
                         subject?: string;
@@ -295,6 +582,10 @@ export interface paths {
                         bcc?: string | string[];
                         text?: string | null;
                         html?: string | null;
+                        /** @description Custom headers to included with the emails */
+                        headers?: {
+                            [key: string]: string;
+                        };
                         attachments?: {
                             filename: string;
                             content: string;
@@ -345,7 +636,6 @@ export interface paths {
                 content: {
                     "application/json": {
                         to: string | string[];
-                        /** Format: email */
                         from: string;
                         /** @description Optional when templateId is provided */
                         subject?: string;
@@ -359,6 +649,10 @@ export interface paths {
                         bcc?: string | string[];
                         text?: string | null;
                         html?: string | null;
+                        /** @description Custom headers to included with the emails */
+                        headers?: {
+                            [key: string]: string;
+                        };
                         attachments?: {
                             filename: string;
                             content: string;
@@ -663,6 +957,282 @@ export interface paths {
                 };
             };
         };
+        trace?: never;
+    };
+    "/v1/campaigns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        name: string;
+                        from: string;
+                        subject: string;
+                        previewText?: string;
+                        contactBookId: string;
+                        content?: string;
+                        html?: string;
+                        replyTo?: string | string[];
+                        cc?: string | string[];
+                        bcc?: string | string[];
+                        sendNow?: boolean;
+                        /** @description Timestamp in ISO 8601 format or natural language (e.g., 'tomorrow 9am', 'next monday 10:30') */
+                        scheduledAt?: string;
+                        batchSize?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Create a campaign */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            name: string;
+                            from: string;
+                            subject: string;
+                            previewText: string | null;
+                            contactBookId: string | null;
+                            html: string | null;
+                            content: string | null;
+                            status: string;
+                            /** Format: date-time */
+                            scheduledAt: string | null;
+                            batchSize: number;
+                            batchWindowMinutes: number;
+                            total: number;
+                            sent: number;
+                            delivered: number;
+                            opened: number;
+                            clicked: number;
+                            unsubscribed: number;
+                            bounced: number;
+                            hardBounced: number;
+                            complained: number;
+                            replyTo: string[];
+                            cc: string[];
+                            bcc: string[];
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/campaigns/{campaignId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    campaignId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Get campaign details */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            name: string;
+                            from: string;
+                            subject: string;
+                            previewText: string | null;
+                            contactBookId: string | null;
+                            html: string | null;
+                            content: string | null;
+                            status: string;
+                            /** Format: date-time */
+                            scheduledAt: string | null;
+                            batchSize: number;
+                            batchWindowMinutes: number;
+                            total: number;
+                            sent: number;
+                            delivered: number;
+                            opened: number;
+                            clicked: number;
+                            unsubscribed: number;
+                            bounced: number;
+                            hardBounced: number;
+                            complained: number;
+                            replyTo: string[];
+                            cc: string[];
+                            bcc: string[];
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/campaigns/{campaignId}/schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    campaignId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description Timestamp in ISO 8601 format or natural language (e.g., 'tomorrow 9am', 'next monday 10:30') */
+                        scheduledAt?: string;
+                        batchSize?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Schedule a campaign */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            success: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/campaigns/{campaignId}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    campaignId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Pause a campaign */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            success: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/campaigns/{campaignId}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    campaignId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Resume a campaign */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            success: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
 }

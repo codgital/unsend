@@ -6,6 +6,7 @@ import * as ses from "~/server/aws/ses";
 import { EventType } from "@aws-sdk/client-sesv2";
 import { EmailQueueService } from "./email-queue-service";
 import { smallNanoid } from "../nanoid";
+import { logger } from "../logger/log";
 
 const GENERAL_EVENTS: EventType[] = [
   "BOUNCE",
@@ -45,19 +46,19 @@ export class SesSettingsService {
   }
 
   /**
-   * Creates a new setting in AWS for the given region and unsendUrl
+   * Creates a new setting in AWS for the given region and usesendUrl
    *
    * @param region
-   * @param unsendUrl
+   * @param usesendUrl
    */
   public static async createSesSetting({
     region,
-    unsendUrl,
+    usesendUrl,
     sendingRateLimit,
     transactionalQuota,
   }: {
     region: string;
-    unsendUrl: string;
+    usesendUrl: string;
     sendingRateLimit: number;
     transactionalQuota: number;
   }) {
@@ -66,20 +67,22 @@ export class SesSettingsService {
       throw new Error(`SesSetting for region ${region} already exists`);
     }
 
-    const parsedUrl = unsendUrl.endsWith("/")
-      ? unsendUrl.substring(0, unsendUrl.length - 1)
-      : unsendUrl;
+    const parsedUrl = usesendUrl.endsWith("/")
+      ? usesendUrl.substring(0, usesendUrl.length - 1)
+      : usesendUrl;
 
-    const unsendUrlValidation = await isValidUnsendUrl(parsedUrl);
+    const usesendUrlValidation = await isValidUsesendUrl(parsedUrl);
 
-    if (!unsendUrlValidation.isValid) {
+    if (!usesendUrlValidation.isValid) {
       throw new Error(
-        `Unsend URL: ${unsendUrl} is not valid, status: ${unsendUrlValidation.code} message:${unsendUrlValidation.error}`
+        `Callback URL: ${usesendUrl} is not valid, status: ${usesendUrlValidation.code} message:${usesendUrlValidation.error}`
       );
     }
 
     const idPrefix = smallNanoid(10);
     let topicArn: string | undefined;
+
+    let settingId: string | undefined;
 
     try {
       const topicName = `${idPrefix}-${region}-unsend`;
@@ -88,27 +91,27 @@ export class SesSettingsService {
         throw new Error("Failed to create SNS topic");
       }
 
-      const setting = await db.$transaction(async (tx) => {
-        const setting = await tx.sesSetting.create({
-          data: {
-            region,
-            callbackUrl: `${parsedUrl}/api/ses_callback`,
-            topic: topicName,
-            topicArn,
-            sesEmailRateLimit: sendingRateLimit,
-            transactionalQuota,
-            idPrefix,
-          },
-        });
-
-        await sns.subscribeEndpoint(
-          topicArn!,
-          `${setting.callbackUrl}`,
-          setting.region
-        );
-
-        return setting;
+      const setting = await db.sesSetting.create({
+        data: {
+          region,
+          callbackUrl: `${parsedUrl}/api/ses_callback`,
+          topic: topicName,
+          topicArn,
+          sesEmailRateLimit: sendingRateLimit,
+          transactionalQuota,
+          idPrefix,
+        },
       });
+
+      settingId = setting.id;
+
+      await this.invalidateCache();
+
+      await sns.subscribeEndpoint(
+        topicArn!,
+        `${setting.callbackUrl}`,
+        setting.region
+      );
 
       if (!setting) {
         throw new Error("Failed to create setting");
@@ -121,9 +124,12 @@ export class SesSettingsService {
         setting.sesEmailRateLimit,
         setting.transactionalQuota
       );
-      console.log(
-        EmailQueueService.transactionalQueue,
-        EmailQueueService.marketingQueue
+      logger.info(
+        {
+          transactionalQueue: EmailQueueService.transactionalQueue,
+          marketingQueue: EmailQueueService.marketingQueue,
+        },
+        "Email queues initialized"
       );
 
       await this.invalidateCache();
@@ -132,10 +138,21 @@ export class SesSettingsService {
         try {
           await sns.deleteTopic(topicArn, region);
         } catch (deleteError) {
-          console.error("Failed to delete SNS topic after error:", deleteError);
+          logger.error(
+            { err: deleteError },
+            "Failed to delete SNS topic after error"
+          );
         }
       }
-      console.error("Failed to create SES setting", error);
+      if (settingId) {
+        await db.sesSetting.delete({
+          where: {
+            id: settingId,
+          },
+        });
+      }
+      await this.invalidateCache();
+      logger.error({ err: error }, "Failed to create SES setting");
       throw error;
     }
   }
@@ -160,9 +177,12 @@ export class SesSettingsService {
         sesEmailRateLimit: sendingRateLimit,
       },
     });
-    console.log(
-      EmailQueueService.transactionalQueue,
-      EmailQueueService.marketingQueue
+    logger.info(
+      {
+        transactionalQueue: EmailQueueService.transactionalQueue,
+        marketingQueue: EmailQueueService.marketingQueue,
+      },
+      "Email queues before update"
     );
 
     EmailQueueService.initializeQueue(
@@ -171,9 +191,12 @@ export class SesSettingsService {
       setting.transactionalQuota
     );
 
-    console.log(
-      EmailQueueService.transactionalQueue,
-      EmailQueueService.marketingQueue
+    logger.info(
+      {
+        transactionalQueue: EmailQueueService.transactionalQueue,
+        marketingQueue: EmailQueueService.marketingQueue,
+      },
+      "Email queues after update"
     );
 
     await this.invalidateCache();
@@ -187,8 +210,9 @@ export class SesSettingsService {
   }
 
   static async invalidateCache() {
-    this.cache = {};
     const settings = await db.sesSetting.findMany();
+    this.cache = {};
+    this.topicArns = [];
     settings.forEach((setting) => {
       this.cache[setting.region] = setting;
       if (setting.topicArn) {
@@ -260,8 +284,8 @@ async function registerConfigurationSet(setting: SesSetting) {
   });
 }
 
-async function isValidUnsendUrl(url: string) {
-  console.log("Checking if URL is valid", url);
+async function isValidUsesendUrl(url: string) {
+  logger.info({ url }, "Checking if URL is valid");
   try {
     const response = await fetch(`${url}/api/ses_callback`, {
       method: "GET",
@@ -272,7 +296,7 @@ async function isValidUnsendUrl(url: string) {
       error: response.statusText,
     };
   } catch (e) {
-    console.log("Error checking if URL is valid", e);
+    logger.error({ err: e }, "Error checking if URL is valid");
     return {
       isValid: false,
       code: 500,

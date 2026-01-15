@@ -7,12 +7,13 @@ import { getRedis } from "~/server/redis";
 import { getTeamFromToken } from "~/server/public-api/auth";
 import { isSelfHosted } from "~/utils/common";
 import { UnsendApiError } from "./api-error";
-import { Team } from "@prisma/client";
+import { Team, ApiKey } from "@prisma/client";
+import { logger } from "../logger/log";
 
 // Define AppEnv for Hono context
 export type AppEnv = {
   Variables: {
-    team: Team & { apiKeyId: number };
+    team: Team & { apiKeyId: number; apiKey: { domainId: number | null } };
   };
 };
 
@@ -38,7 +39,7 @@ export function getApp() {
       if (error instanceof UnsendApiError) {
         throw error;
       }
-      console.error("Error in getTeamFromToken middleware:", error);
+      logger.error({ err: error }, "Error in getTeamFromToken middleware");
       throw new UnsendApiError({
         code: "INTERNAL_SERVER_ERROR",
         message: "Authentication failed",
@@ -84,7 +85,7 @@ export function getApp() {
       // We rely on expire being set for new keys.
       ttl = await redis.ttl(key);
     } catch (error) {
-      console.error("Redis error during rate limiting:", error);
+      logger.error({ err: error }, "Redis error during rate limiting");
       // Alternatively, you could fail closed by throwing an error here.
       return next();
     }
@@ -117,7 +118,7 @@ export function getApp() {
     openapi: "3.0.0",
     info: {
       version: "1.0.0",
-      title: "Unsend API",
+      title: "useSend API",
     },
     servers: [{ url: `${env.NEXTAUTH_URL}/api` }],
   }));

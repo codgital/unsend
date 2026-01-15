@@ -10,9 +10,11 @@ export type EmailContent = {
   cc?: string | string[];
   bcc?: string | string[];
   attachments?: Array<EmailAttachment>;
+  headers?: Record<string, string>;
   unsubUrl?: string;
   scheduledAt?: string;
   inReplyToId?: string | null;
+  sesTenantId?: string | null;
 };
 
 export type EmailAttachment = {

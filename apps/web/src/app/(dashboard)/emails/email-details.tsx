@@ -2,7 +2,7 @@
 
 import { UAParser } from "ua-parser-js";
 import { api } from "~/trpc/react";
-import { Separator } from "@unsend/ui/src/separator";
+import { Separator } from "@usesend/ui/src/separator";
 import { EmailStatusBadge, EmailStatusIcon } from "./email-status-badge";
 import { formatDate } from "date-fns";
 import { motion } from "framer-motion";
@@ -28,7 +28,7 @@ export default function EmailDetails({ emailId }: { emailId: string }) {
   const emailQuery = api.email.getEmail.useQuery({ id: emailId });
 
   return (
-    <div className="h-full overflow-auto px-4">
+    <div className="h-full overflow-auto px-4 no-scrollbar">
       <div className="flex justify-between items-center">
         <div className="flex gap-4 items-center">
           <h1 className="font-bold">{emailQuery.data?.to}</h1>
@@ -268,6 +268,13 @@ const EmailStatusText = ({
     );
   } else if (status === "CANCELLED") {
     return <div>This scheduled email was cancelled</div>;
+  } else if (status === "SUPPRESSED") {
+    return (
+      <div>
+        This email was suppressed because this email is previously either
+        bounced or the recipient complained.
+      </div>
+    );
   }
 
   return <div className="w-full">{status}</div>;
